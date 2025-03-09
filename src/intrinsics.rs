@@ -1,6 +1,6 @@
-type S = packed_seq::u32x8;
+use core::mem::transmute;
+use packed_seq::u32x8 as S;
 const L: usize = 8;
-use std::{arch::x86_64::__m256i, mem::transmute};
 
 /// Append subset of values indicated by `mask` to a vector.
 #[inline(always)]
@@ -28,7 +28,7 @@ pub unsafe fn append_from_mask<T>(vals: S, mask: S, v: &mut [T], write_idx: &mut
 
         let m = _mm256_movemask_ps(transmute(!mask)) as usize;
         let numberofnewvalues = L - m.count_ones() as usize;
-        let key = UNIQSHUF[m];
+        let key = transmute(UNIQSHUF[m]);
         let val = _mm256_permutevar8x32_epi32(vals, key);
         _mm256_storeu_si256(v.as_mut_ptr().add(*write_idx) as *mut __m256i, val);
         *write_idx += numberofnewvalues;
@@ -41,6 +41,7 @@ pub unsafe fn append_from_mask<T>(vals: S, mask: S, v: &mut [T], write_idx: &mut
 pub unsafe fn append_from_mask(vals: S, mask: S, v: &mut [u32], write_idx: &mut usize) {
     unsafe {
         use core::arch::aarch64::{vpaddd_u64, vpaddlq_u32, vqtbl2q_u8, vst1_u32_x4};
+        use wide::u32x4;
 
         let (d1, d2): (u32x4, u32x4) = transmute(!mask);
         let pow1 = u32x4::new([1, 2, 4, 8]);
@@ -65,7 +66,7 @@ pub unsafe fn append_from_mask(vals: S, mask: S, v: &mut [u32], write_idx: &mut 
 /// For each of 256 masks of which elements are different than their predecessor,
 /// a shuffle that sends those new elements to the beginning.
 #[rustfmt::skip]
-const UNIQSHUF: [__m256i; 256] = unsafe {transmute([
+const UNIQSHUF: [S; 256] = unsafe {transmute([
 0,1,2,3,4,5,6,7,
 1,2,3,4,5,6,7,0,
 0,2,3,4,5,6,7,0,
