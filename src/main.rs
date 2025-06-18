@@ -92,6 +92,7 @@ fn main() {
     let q = paths.len();
 
     let sketcher = params.build();
+    let params = sketcher.params();
 
     let style = indicatif::ProgressStyle::with_template(
         "{msg:.bold} [{elapsed_precise:.cyan}] {bar} {pos}/{len} ({percent:>3}%)",
@@ -122,9 +123,19 @@ fn main() {
                 }
                 file.seek(std::io::SeekFrom::Start(0)).unwrap();
                 let VersionedSketch {
-                    version: _version,
+                    version,
                     sketch,
                 } = bincode::decode_from_std_read(&mut file, BINCODE_CONFIG).unwrap();
+                assert_eq!(version, SKETCH_VERSION);
+
+                let mut sketch_params = sketch.to_params();
+                sketch_params.filter_empty = params.filter_empty;
+                if *params != sketch_params {
+                    panic!(
+                        "Sketch parameters do not match:\nCommand line: {params:?}\nOn disk:      {sketch_params:?}",
+                    );
+                }
+
                 return sketch;
             };
 

@@ -164,6 +164,26 @@ fn compute_mash_distance(j: f32, k: usize) -> f32 {
 }
 
 impl Sketch {
+    pub fn to_params(&self) -> SketchParams {
+        match self {
+            Sketch::BottomSketch(sketch) => SketchParams {
+                alg: SketchAlg::Bottom,
+                rc: sketch.rc,
+                k: sketch.k,
+                s: sketch.bottom.len(),
+                b: 0,
+                filter_empty: false,
+            },
+            Sketch::BucketSketch(sketch) => SketchParams {
+                alg: SketchAlg::Bucket,
+                rc: sketch.rc,
+                k: sketch.k,
+                s: sketch.buckets.len(),
+                b: sketch.b,
+                filter_empty: false,
+            },
+        }
+    }
     pub fn jaccard_similarity(&self, other: &Self) -> f32 {
         match (self, other) {
             (Sketch::BottomSketch(a), Sketch::BottomSketch(b)) => a.jaccard_similarity(b),
@@ -207,6 +227,15 @@ impl BitSketch {
                     .collect()
             }),
             _ => panic!("Unsupported bit width. Must be 1 or 8 or 16 or 32."),
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            BitSketch::B32(v) => v.len(),
+            BitSketch::B16(v) => v.len(),
+            BitSketch::B8(v) => v.len(),
+            BitSketch::B1(v) => 64 * v.len(),
         }
     }
 }
@@ -321,13 +350,13 @@ impl BucketSketch {
     }
 }
 
-#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+#[derive(clap::ValueEnum, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SketchAlg {
     Bottom,
     Bucket,
 }
 
-#[derive(clap::Args, Copy, Clone, Debug)]
+#[derive(clap::Args, Copy, Clone, Debug, Eq, PartialEq)]
 pub struct SketchParams {
     /// Sketch algorithm to use. Defaults to bucket because of its much faster comparisons.
     #[arg(long, default_value_t = SketchAlg::Bucket)]
@@ -366,8 +395,13 @@ pub struct Sketcher {
 
 impl SketchParams {
     pub fn build(&self) -> Sketcher {
+        let mut params = *self;
+        if params.alg == SketchAlg::Bottom {
+            // Clear out redundant value.
+            params.b = 0;
+        }
         Sketcher {
-            params: *self,
+            params,
             factor: 2.into(),
         }
     }
@@ -402,6 +436,10 @@ impl SketchParams {
 }
 
 impl Sketcher {
+    pub fn params(&self) -> &SketchParams {
+        &self.params
+    }
+
     /// Sketch a single sequence.
     pub fn sketch<'s, S: Seq<'s>>(&self, seq: S) -> Sketch {
         self.sketch_seqs(&[seq])
