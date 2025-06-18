@@ -1,5 +1,5 @@
 #![feature(path_add_extension)]
-use std::{fs::File, path::PathBuf};
+use std::{fs::File, path::PathBuf, sync::atomic::AtomicUsize};
 
 use clap::Parser;
 use indicatif::ParallelProgressIterator;
@@ -91,6 +91,10 @@ fn main() {
 
     let start = std::time::Instant::now();
 
+    let num_sketched = AtomicUsize::new(0);
+    let num_read = AtomicUsize::new(0);
+    let num_written = AtomicUsize::new(0);
+
     let sketches: Vec<_> = paths
         .par_iter()
         .progress_with_style(style.clone())
@@ -98,6 +102,7 @@ fn main() {
         .with_finish(indicatif::ProgressFinish::AndLeave)
         .map(|path| {
             if path.extension().is_some_and(|ext| ext == EXTENSION) {
+                num_read.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 return bincode::decode_from_std_read(
                     &mut File::open(path).unwrap(),
                     BINCODE_CONFIG,
@@ -113,6 +118,7 @@ fn main() {
                 path.with_file_name(new_filename)
             };
             if ssketch_path.exists() {
+                num_read.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 return bincode::decode_from_std_read(
                     &mut File::open(ssketch_path).unwrap(),
                     BINCODE_CONFIG,
@@ -126,9 +132,11 @@ fn main() {
                 seqs.push(PackedSeqVec::from_ascii(&r.unwrap().seq()));
             }
             let slices = seqs.iter().map(|s| s.as_slice()).collect_vec();
+            num_sketched.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let sketch = sketcher.sketch_seqs(&slices);
 
             if save_sketches {
+                num_written.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 bincode::encode_into_std_write(
                     &sketch,
                     &mut File::create(ssketch_path).unwrap(),
@@ -146,6 +154,12 @@ fn main() {
         "Sketching {q} seqs took {t_sketch:?} ({:?} avg)",
         t_sketch / q as u32
     );
+    let num_read = num_read.into_inner();
+    let num_sketched = num_sketched.into_inner();
+    let num_written = num_written.into_inner();
+    info!("Read {num_read} sketches from disk.");
+    info!("Newly sketched {num_sketched} files.");
+    info!("Wrote {num_written} sketches to disk.");
 
     if matches!(args.command, Command::Sketch { .. }) {
         // If we are sketching, we are done.
