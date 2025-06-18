@@ -139,6 +139,7 @@ use log::{debug, info};
 use packed_seq::{u32x8, Seq};
 use simd_minimizers::private::nthash::NtHasher;
 
+#[derive(bincode::Encode, bincode::Decode)]
 pub enum Sketch {
     BottomSketch(BottomSketch),
     BucketSketch(BucketSketch),
@@ -181,6 +182,7 @@ impl Sketch {
 }
 
 /// Store only the bottom b bits of each input value.
+#[derive(bincode::Encode, bincode::Decode)]
 pub enum BitSketch {
     B32(Vec<u32>),
     B16(Vec<u16>),
@@ -210,6 +212,7 @@ impl BitSketch {
 }
 
 /// A sketch containing the `s` smallest k-mer hashes.
+#[derive(bincode::Encode, bincode::Decode)]
 pub struct BottomSketch {
     rc: bool,
     k: usize,
@@ -247,6 +250,7 @@ impl BottomSketch {
 }
 
 /// A sketch containing the smallest k-mer hash for each remainder mod `s`.
+#[derive(bincode::Encode, bincode::Decode)]
 pub struct BucketSketch {
     rc: bool,
     k: usize,
