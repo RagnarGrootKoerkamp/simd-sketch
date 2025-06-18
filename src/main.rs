@@ -1,5 +1,5 @@
 #![feature(path_add_extension)]
-use std::{fs::File, path::PathBuf, sync::atomic::AtomicUsize};
+use std::{fs::File, io::Seek, path::PathBuf, sync::atomic::AtomicUsize};
 
 use clap::Parser;
 use indicatif::ParallelProgressIterator;
@@ -56,6 +56,16 @@ const BINCODE_CONFIG: bincode::config::Configuration<
     bincode::config::Fixint,
 > = bincode::config::standard().with_fixed_int_encoding();
 const EXTENSION: &str = "ssketch";
+const SKETCH_VERSION: usize = 1;
+
+#[derive(bincode::Encode, bincode::Decode)]
+pub struct VersionedSketch {
+    /// This version of simd-sketch only supports encoding version 1.
+    /// This is encoded first, so that it can (hopefully) still be recovered in case decoding fails.
+    version: usize,
+    /// The sketch itself.
+    sketch: simd_sketch::Sketch,
+}
 
 fn main() {
     env_logger::init();
@@ -101,13 +111,25 @@ fn main() {
         .with_message("Sketching")
         .with_finish(indicatif::ProgressFinish::AndLeave)
         .map(|path| {
-            if path.extension().is_some_and(|ext| ext == EXTENSION) {
+            let read_sketch = |path| {
                 num_read.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                return bincode::decode_from_std_read(
-                    &mut File::open(path).unwrap(),
-                    BINCODE_CONFIG,
-                )
-                .unwrap();
+                let mut file = File::open(path).unwrap();
+                // Read the first integer to check the version.
+                let version: usize =
+                    bincode::decode_from_std_read(&mut file, BINCODE_CONFIG).unwrap();
+                if version != SKETCH_VERSION {
+                    panic!("Unsupported sketch version: {version}. Only version {SKETCH_VERSION} is supported.");
+                }
+                file.seek(std::io::SeekFrom::Start(0)).unwrap();
+                let VersionedSketch {
+                    version: _version,
+                    sketch,
+                } = bincode::decode_from_std_read(&mut file, BINCODE_CONFIG).unwrap();
+                return sketch;
+            };
+
+            if path.extension().is_some_and(|ext| ext == EXTENSION) {
+                return read_sketch(path);
             }
 
             let ssketch_path = {
@@ -118,12 +140,7 @@ fn main() {
                 path.with_file_name(new_filename)
             };
             if ssketch_path.exists() {
-                num_read.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                return bincode::decode_from_std_read(
-                    &mut File::open(ssketch_path).unwrap(),
-                    BINCODE_CONFIG,
-                )
-                .unwrap();
+                return read_sketch(&ssketch_path);
             }
 
             let mut seqs = vec![];
@@ -133,16 +150,18 @@ fn main() {
             }
             let slices = seqs.iter().map(|s| s.as_slice()).collect_vec();
             num_sketched.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let sketch = sketcher.sketch_seqs(&slices);
+            let mut sketch = sketcher.sketch_seqs(&slices);
 
             if save_sketches {
                 num_written.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let versioned_sketch = VersionedSketch { version: SKETCH_VERSION, sketch };
                 bincode::encode_into_std_write(
-                    &sketch,
+                    &versioned_sketch,
                     &mut File::create(ssketch_path).unwrap(),
                     BINCODE_CONFIG,
                 )
                 .unwrap();
+                sketch = versioned_sketch.sketch;
             }
 
             sketch
