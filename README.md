@@ -96,8 +96,28 @@ let similarity = sketch1.similarity(&sketch2);
 
 ## Command line tool
 
-The crate comes with a simple command line tool for computing all-to-all
-Mash distances matrices:
+The two main subcommands are `sketch` and `triangle`.
+The is also `dist` that simply computes the distance between two sequences or sketches.
+
+### `sketch`
+
+`simd-sketch sketch` takes a list of (compressed) fasta files as input, and
+writes their sketches as `<file>.ssketch` files.
+
+For example,
+
+```sh
+simd-sketch sketch inputs/*.fa
+```
+
+writes corresponding sketches to `inputs/*.fa.ssketch`.
+
+See below for an explanation of the sketch parameters.
+
+### `triangle`
+
+Compute an all-to-all Mash distance matrix between (already sketched) fasta files.
+With `--save-sketches`, missing intermediate sketches are saved to disk.
 
 ```
 > simd-sketch triangle --help
@@ -115,6 +135,7 @@ Options:
   -s <S>                 Bottom-s sketch, or number of buckets [default: 10000]
   -b <B>                 For bucket-sketch, store only the lower b bits [default: 8]
       --output <OUTPUT>  Write phylip distance matrix here, or default to stdout
+      --save-sketches    Save missing sketches to disk, as .ssketch files alongside the input
   -h, --help             Print help
 ```
 
@@ -135,3 +156,20 @@ Maximal usage with default parameters:
 ```sh
 simd-sketch triangle --alg bucket -k 31 -s 10000 -b 8 inputs/*.fna.gz --output matrix.phylip
 ```
+
+## `.ssketch` files
+
+Sketches are stores as `.ssketch` files alongside each (gzipped) fasta file.
+This is done using the [`bincode` crate](https://crates.io/crates/bincode),
+whose format is described [here](https://github.com/bincode-org/bincode/blob/trunk/docs/spec.md).
+
+Each sketch starts with the binary format version of the current version of the
+tool. The remainder is simply a direct binary encoding of the `Sketch` enum,
+using fixed-width integers.
+
+- For bottom sketches, this contains a sorted `Vec<u32>` of length `s`. Total
+  size: `4s` bytes. (TODO: This is quite inefficient.)
+- For bucket sketches, this contains a `Vec<u32|u16|u8>` of length `s` when storing the bottom
+  `b` in `{32, 16, 8}` bits of each value. When storing only the bottom bit, a
+  `Vec<u64>` of length `s/64` is used instead. Either way, the total size is
+  `s * b/8` bytes.
