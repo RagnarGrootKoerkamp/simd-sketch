@@ -501,8 +501,8 @@ impl Sketcher {
         let mut buckets = vec![u32::MAX; self.params.s];
         loop {
             let target = u32::MAX as usize / n * self.params.s;
-            let bound =
-                (target.saturating_mul(self.factor.load(SeqCst))).min(u32::MAX as usize) as u32;
+            let factor = self.factor.load(Relaxed);
+            let bound = (target.saturating_mul(factor)).min(u32::MAX as usize) as u32;
 
             self.collect_up_to_bound(seqs, bound, &mut out);
 
@@ -548,9 +548,15 @@ impl Sketcher {
                     };
                 }
             }
-            self.factor
-                .fetch_add((self.factor.load(SeqCst) + 1) / 2, SeqCst);
-            debug!("Increase factor to {}", self.factor.load(SeqCst));
+
+            let new_factor = factor + (factor + 1) / 2;
+            let prev = self.factor.fetch_max(new_factor, Relaxed);
+            debug!(
+                "Found only {:>10} of {:>10} ({:>6.3}%)) Increasing factor from {factor} to {new_factor} (was already {prev})",
+                out.len(),
+                self.params.s,
+                out.len() as f32 / self.params.s as f32,
+            );
         }
     }
 
