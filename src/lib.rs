@@ -141,7 +141,7 @@ use std::sync::atomic::{
 };
 
 use log::debug;
-use packed_seq::{u32x8, ChunkIt, PackedNSeq, PaddedIt, Seq};
+use packed_seq::{ChunkIt, PackedNSeq, PaddedIt, Seq, u32x8};
 use seq_hash::KmerHasher;
 
 /// Use the classic rotate-by-1 for backwards compatibility.
@@ -588,17 +588,15 @@ impl Sketcher {
     }
 
     fn collect_up_to_bound<'s>(&self, seqs: &[impl Sketchable], bound: u32, out: &mut Vec<u32>) {
-        let simd_bound = u32x8::splat(bound);
-
         if self.params.rc {
             for &seq in seqs {
                 let hashes = seq.hash_kmers(&self.rc_hasher);
-                collect_impl(simd_bound, hashes, out);
+                collect_impl(bound, hashes, out);
             }
         } else {
             for &seq in seqs {
                 let hashes = seq.hash_kmers(&self.fwd_hasher);
-                collect_impl(simd_bound, hashes, out);
+                collect_impl(bound, hashes, out);
             }
         }
         debug!(
@@ -609,7 +607,9 @@ impl Sketcher {
     }
 }
 
-fn collect_impl(simd_bound: u32x8, hashes: PaddedIt<impl ChunkIt<u32x8>>, out: &mut Vec<u32>) {
+fn collect_impl(bound: u32, hashes: PaddedIt<impl ChunkIt<u32x8>>, out: &mut Vec<u32>) {
+    let simd_bound = u32x8::splat(bound);
+
     out.clear();
     let mut write_idx = 0;
     let lane_len = hashes.it.len();
@@ -619,14 +619,15 @@ fn collect_impl(simd_bound: u32x8, hashes: PaddedIt<impl ChunkIt<u32x8>>, out: &
     hashes.it.for_each(|hashes| {
         let mask = hashes.cmp_lt(simd_bound);
         let in_bounds = idx.cmp_lt(max_idx);
-        if write_idx + 8 >= out.len() {
-            out.resize(write_idx * 3 / 2 + 8, 0);
+        if write_idx + 8 > out.capacity() {
+            out.reserve(out.capacity() + 8);
+            out.resize(out.capacity(), 0);
         }
         unsafe { intrinsics::append_from_mask(hashes, mask & in_bounds, out, &mut write_idx) };
         idx += u32x8::ONE;
     });
 
-    out.resize(write_idx, 0);
+    unsafe { out.set_len(write_idx) };
 }
 
 pub trait Sketchable: Copy {
