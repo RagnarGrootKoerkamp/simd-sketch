@@ -591,11 +591,13 @@ impl Sketcher {
         let simd_bound = u32x8::splat(bound);
         out.clear();
 
-        for &seq in seqs {
-            if self.params.rc {
+        if self.params.rc {
+            for &seq in seqs {
                 let hashes = seq.hash_kmers(&self.rc_hasher);
                 collect_impl(out, simd_bound, hashes);
-            } else {
+            }
+        } else {
+            for &seq in seqs {
                 let hashes = seq.hash_kmers(&self.fwd_hasher);
                 collect_impl(out, simd_bound, hashes);
             }
@@ -675,16 +677,19 @@ struct FM32 {
     m: u64,
 }
 impl FM32 {
+    #[inline(always)]
     fn new(d: u32) -> Self {
         Self {
             d: d as u64,
             m: u64::MAX / d as u64 + 1,
         }
     }
+    #[inline(always)]
     fn fastmod(self, h: u32) -> usize {
         let lowbits = self.m.wrapping_mul(h as u64);
         ((lowbits as u128 * self.d as u128) >> 64) as usize
     }
+    #[inline(always)]
     fn fastdiv(self, h: u32) -> usize {
         ((self.m as u128 * h as u128) >> 64) as u32 as usize
     }
