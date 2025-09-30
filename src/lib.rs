@@ -135,7 +135,7 @@
 
 mod intrinsics;
 
-use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 use log::debug;
 use packed_seq::{u32x8, ChunkIt, PackedNSeq, PaddedIt, Seq};
@@ -304,9 +304,9 @@ impl BucketSketch {
         assert_eq!(self.k, other.k);
         assert_eq!(self.b, other.b);
         let both_empty = self.both_empty(other);
-        if both_empty > 0 {
-            debug!("Both empty: {}", both_empty);
-        }
+        // if both_empty > 0 {
+        // debug!("Both empty: {}", both_empty);
+        // }
         match (&self.buckets, &other.buckets) {
             (BitSketch::B32(a), BitSketch::B32(b)) => Self::inner_similarity(a, b, both_empty),
             (BitSketch::B16(a), BitSketch::B16(b)) => Self::inner_similarity(a, b, both_empty),
@@ -403,21 +403,32 @@ pub struct Sketcher {
     params: SketchParams,
     rc_hasher: RcNtHasher,
     fwd_hasher: FwdNtHasher,
-    factor: AtomicUsize,
+    factor: AtomicU64,
 }
 
 impl SketchParams {
     pub fn build(&self) -> Sketcher {
         let mut params = *self;
-        if params.alg == SketchAlg::Bottom {
-            // Clear out redundant value.
-            params.b = 0;
+        // factor is pre-multiplied by 10 for a bit more fine-grained resolution.
+        let factor;
+        match params.alg {
+            SketchAlg::Bottom => {
+                // Clear out redundant value.
+                params.b = 0;
+                factor = 13;
+            }
+            SketchAlg::Bucket => {
+                // To fill s buckets, we need ln(s)*s elements.
+                // lg(s) is already a bit larger.
+                factor = params.s.ilog2() as u64 * 5;
+            }
         }
+        if params.alg == SketchAlg::Bottom {}
         Sketcher {
             params,
             rc_hasher: RcNtHasher::new(params.k),
             fwd_hasher: FwdNtHasher::new(params.k),
-            factor: 2.into(),
+            factor: AtomicU64::new(factor),
         }
     }
 
@@ -484,19 +495,22 @@ impl Sketcher {
         let n = self.num_kmers(seqs);
         let mut out = vec![];
         loop {
-            let target = u32::MAX as usize / n * self.params.s;
+            let target = u32::MAX as usize * self.params.s / n;
             let factor = self.factor.load(Relaxed);
-            let bound = (target.saturating_mul(factor)).min(u32::MAX as usize) as u32;
+            let bound = (target as u128 * factor as u128 / 10 as u128).min(u32::MAX as u128) as u32;
 
             self.collect_up_to_bound(seqs, bound, &mut out);
 
             if bound == u32::MAX || out.len() >= self.params.s {
                 out.sort_unstable();
+                let old_len = out.len();
                 out.dedup();
+                let new_len = out.len();
+                debug!("Deduplicated from {old_len} to {new_len}");
                 if bound == u32::MAX || out.len() >= self.params.s {
                     out.resize(self.params.s, u32::MAX);
 
-                    break BottomSketch {
+                    return BottomSketch {
                         rc: self.params.rc,
                         k: self.params.k,
                         bottom: out,
@@ -523,26 +537,25 @@ impl Sketcher {
         let mut out = vec![];
         let mut buckets = vec![u32::MAX; self.params.s];
         loop {
-            let target = u32::MAX as usize / n * self.params.s;
+            let target = u32::MAX as usize * self.params.s / n;
             let factor = self.factor.load(Relaxed);
-            let bound = (target.saturating_mul(factor)).min(u32::MAX as usize) as u32;
+            let bound = (target as u128 * factor as u128 / 10 as u128).min(u32::MAX as u128) as u32;
 
             debug!(
-                "n {n:>10} s {:>10} target {target:>10} ({:>6.3}%)  factor {:>3}",
+                "n {n:>10} s {} target {target:>10} factor {factor:>3} bound {bound:>10} ({:>6.3}%)",
                 self.params.s,
-                self.params.s as f32 / n as f32 * 100.0,
-                factor
+                bound as f32 / u32::MAX as f32 * 100.0,
             );
 
             self.collect_up_to_bound(seqs, bound, &mut out);
 
+            let mut empty = 0;
             if bound == u32::MAX || out.len() >= self.params.s {
                 let m = FM32::new(self.params.s as u32);
                 for &hash in &out {
                     let bucket = m.fastmod(hash);
                     buckets[bucket] = buckets[bucket].min(hash);
                 }
-                let mut empty = 0;
                 for &x in &buckets {
                     if x == u32::MAX {
                         empty += 1;
@@ -566,7 +579,7 @@ impl Sketcher {
                         vec![]
                     };
 
-                    break BucketSketch {
+                    return BucketSketch {
                         rc: self.params.rc,
                         k: self.params.k,
                         b: self.params.b,
@@ -582,15 +595,16 @@ impl Sketcher {
             let new_factor = factor + factor.div_ceil(4);
             let prev = self.factor.fetch_max(new_factor, Relaxed);
             debug!(
-                "Found only {:>10} of {:>10} ({:>6.3}%)) Increasing factor from {factor} to {new_factor} (was already {prev})",
+                "Found only {:>10} of {:>10} ({:>6.3}%, {empty:>5} empty) Increasing factor from {factor} to {new_factor} (was already {prev})",
                 out.len(),
                 self.params.s,
-                out.len() as f32 / self.params.s as f32,
+                out.len() as f32 / self.params.s as f32 * 100.,
             );
         }
     }
 
     fn collect_up_to_bound<'s>(&self, seqs: &[impl Sketchable], bound: u32, out: &mut Vec<u32>) {
+        out.clear();
         if self.params.rc {
             for &seq in seqs {
                 let hashes = seq.hash_kmers(&self.rc_hasher);
@@ -612,9 +626,7 @@ impl Sketcher {
 
 fn collect_impl(bound: u32, hashes: PaddedIt<impl ChunkIt<u32x8>>, out: &mut Vec<u32>) {
     let simd_bound = u32x8::splat(bound);
-
-    out.clear();
-    let mut write_idx = 0;
+    let mut write_idx = out.len();
     let lane_len = hashes.it.len();
     let mut idx = u32x8::from(std::array::from_fn(|i| (i * lane_len) as u32));
     let max_idx = (8 * lane_len - hashes.padding) as u32;
@@ -624,7 +636,6 @@ fn collect_impl(bound: u32, hashes: PaddedIt<impl ChunkIt<u32x8>>, out: &mut Vec
         let in_bounds = idx.cmp_lt(max_idx);
         if write_idx + 8 > out.capacity() {
             out.reserve(out.capacity() + 8);
-            out.resize(out.capacity(), 0);
         }
         unsafe { intrinsics::append_from_mask(hashes, mask & in_bounds, out, &mut write_idx) };
         idx += u32x8::ONE;
