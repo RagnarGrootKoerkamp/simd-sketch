@@ -10,9 +10,13 @@ import matplotlib.patches as mpatches
 
 plt.close()
 paths = sys.argv[1:]
-n = 5000
+n = 50000
 
-dir = Path("../output2/")
+version = 1
+version_str = "2" if version == 2 else ""
+
+
+dir = Path(f"../output{version_str}/")
 
 
 def key(s, _nsre=re.compile(r"(\d+)")):
@@ -37,7 +41,7 @@ groups = [
     ),
     (sorted(list(dir.glob("bindash_bottom_s*.dist")), key=key), "BinDash bottom"),
     (sorted(list(dir.glob("bindashrs_*.dist")), key=key), "BinDash-rs bucket"),
-    ([], ""),
+    # ([], ""),
     # (
     #     sorted(list(dir.glob("bindash_bottom_fixed*.dist")), key=key),
     #     "BinDash bottom (fixed)",
@@ -46,20 +50,20 @@ groups = [
         sorted(list(dir.glob("simd_bucket_*b32.dist")), key=key),
         "SimdSketch bucket b=32",
     ),
-    (
-        sorted(list(dir.glob("simd_bucket_*b16.dist")), key=key),
-        "SimdSketch bucket b=16",
-    ),
+    # (
+    #     sorted(list(dir.glob("simd_bucket_*b16.dist")), key=key),
+    #     "SimdSketch bucket b=16",
+    # ),
     (sorted(list(dir.glob("simd_bucket_*b8.dist")), key=key), "SimdSketch bucket b=8"),
     (sorted(list(dir.glob("simd_bucket_*b1.dist")), key=key), "SimdSketch bucket b=1"),
     (
         sorted(list(dir.glob("bindash_bucket_*b32.dist")), key=key),
         "BinDash bucket b=32",
     ),
-    (
-        sorted(list(dir.glob("bindash_bucket_*b16.dist")), key=key),
-        "BinDash bucket b=16",
-    ),
+    # (
+    #     sorted(list(dir.glob("bindash_bucket_*b16.dist")), key=key),
+    #     "BinDash bucket b=16",
+    # ),
     (sorted(list(dir.glob("bindash_bucket_*b8.dist")), key=key), "BinDash bucket b=8"),
     (sorted(list(dir.glob("bindash_bucket_*b1.dist")), key=key), "BinDash bucket b=1"),
 ]
@@ -83,7 +87,7 @@ for i, (group, title) in enumerate(groups):
     dists = [read(p) for p in group]
     dists = [d for d in dists if len(d) == len(d0)]
 
-    plt.subplot(3, 4, i + 1)
+    plt.subplot(3, 3, i + 1)
     for name, d in zip(names, dists):
         print(f"plotting len")
         # extract value of s from name, _s\d+_
@@ -101,13 +105,14 @@ for i, (group, title) in enumerate(groups):
         lh.set_alpha(1)
         lh.set_sizes([50] * 4)
     plt.title(title)
-    eps = 0.0001
+    eps = 0.0001 if version == 2 else 0
     plt.xlim(eps, 1)
     plt.ylim(eps, 1)
     plt.xticks([eps, 1])
     plt.yticks([eps, 1])
-    plt.xscale("log")
-    plt.yscale("log")
+    if version == 2:
+        plt.xscale("log")
+        plt.yscale("log")
     plt.plot([0, 1], [0, 1], color="black", linestyle="-", lw=0.5)
 
 # Add legend under the plot mapping s to each colour.
@@ -141,5 +146,5 @@ plt.figlegend(
 plt.gcf().set_size_inches(15, 10)
 
 plt.tight_layout()
-plt.savefig("plots/correlation2.png", dpi=300, bbox_inches="tight")
+plt.savefig(f"plots/correlation{version_str}.png", dpi=300, bbox_inches="tight")
 # plt.show()

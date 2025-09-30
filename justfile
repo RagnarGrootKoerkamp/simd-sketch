@@ -3,9 +3,9 @@ build:
 
 bench: build
 
-input := "input2"
-stats := "py/stats2"
-output := "output2"
+input := "input"
+stats := "py/stats"
+output := "output"
 
 simd_bot s: build
     ./target/release/examples/dist {{input}} -s {{s}}                   --stats {{stats}} > {{output}}/simd_bottom_s{{s}}.dist
@@ -19,11 +19,11 @@ simd_bucket_all: (simd_bucket_all_b "128") (simd_bucket_all_b "1024") (simd_buck
 simd_bucket_16: (simd_bucket "128" "16") (simd_bucket "1024" "16") (simd_bucket "8192" "16") (simd_bucket "32768" "16")
 
 bindash_bot s:
-    time -f %U ./bindash sketch {{input}}/*fna --minhashtype=0 --kmerlen=31 --sketchsize={{s}} --outfname={{output}}/tmp 2>&1 | tee >(cat 1>&2) | tail -1 > {{output}}/tmp_sketch_time
+    time -f %U ./bindash sketch {{input}}/*fa --minhashtype=0 --kmerlen=31 --sketchsize={{s}} --outfname={{output}}/tmp 2>&1 | tee >(cat 1>&2) | tail -1 > {{output}}/tmp_sketch_time
     time -f %U ./bindash dist {{output}}/tmp --outfname={{output}}/bindash_bottom_s{{s}}.dist 2>&1 | tee >(cat 1>&2) | tail -1 > {{output}}/tmp_dist_time
     echo BinDash bottom 1000 31 {{s}} 64 `cat {{output}}/tmp_sketch_time` `cat {{output}}/tmp_dist_time` >> {{stats}}
 bindash_bucket s b:
-    time -f %U ./bindash sketch {{input}}/*fna --minhashtype=2 --kmerlen=31 --sketchsize={{s}} --bbits={{b}} --outfname={{output}}/tmp 2>&1 | tee >(cat 1>&2) | tail -1 > {{output}}/tmp_sketch_time
+    time -f %U ./bindash sketch {{input}}/*fa --minhashtype=2 --kmerlen=31 --sketchsize={{s}} --bbits={{b}} --outfname={{output}}/tmp 2>&1 | tee >(cat 1>&2) | tail -1 > {{output}}/tmp_sketch_time
     time -f %U ./bindash dist {{output}}/tmp --outfname={{output}}/bindash_bucket_s{{s}}_b{{b}}.dist 2>&1 | tee >(cat 1>&2) | tail -1 > {{output}}/tmp_dist_time
     echo BinDash bin 1000 31 {{s}} {{b}} `cat {{output}}/tmp_sketch_time` `cat {{output}}/tmp_dist_time` >> {{stats}}
 
