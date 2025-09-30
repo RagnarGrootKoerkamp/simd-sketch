@@ -24,6 +24,8 @@ enum Command {
         params: SketchParams,
         /// Paths to (directories of) (gzipped) fasta files.
         paths: Vec<PathBuf>,
+        #[arg(long, short = 'j')]
+        threads: Option<usize>,
     },
     /// Compute the distance between two sequences.
     Dist {
@@ -33,6 +35,8 @@ enum Command {
         path_a: PathBuf,
         /// Second input fasta file or .ssketch file.
         path_b: PathBuf,
+        #[arg(long, short = 'j')]
+        threads: Option<usize>,
     },
     /// Takes paths to fasta files, and outputs a Phylip distance matrix to stdout.
     Triangle {
@@ -47,6 +51,8 @@ enum Command {
         /// Save missing sketches to disk, as .ssketch files alongside the input.
         #[arg(long)]
         save_sketches: bool,
+        #[arg(long, short = 'j')]
+        threads: Option<usize>,
     },
 }
 
@@ -71,13 +77,25 @@ fn main() {
 
     let args = Args::parse();
 
+    // Initialize thread pool.
+    let (Command::Sketch { threads, .. }
+    | Command::Dist { threads, .. }
+    | Command::Triangle { threads, .. }) = &args.command;
+    if let Some(threads) = threads {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(*threads)
+            .build_global()
+            .unwrap();
+    }
+
     let (params, paths) = match &args.command {
         Command::Dist {
             params,
             path_a,
             path_b,
+            ..
         } => (params, vec![path_a.clone(), path_b.clone()]),
-        Command::Sketch { params, paths } | Command::Triangle { params, paths, .. } => {
+        Command::Sketch { params, paths, .. } | Command::Triangle { params, paths, .. } => {
             (params, collect_paths(&paths))
         }
     };
