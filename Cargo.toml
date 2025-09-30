@@ -11,12 +11,26 @@ description = "A SIMD-accelerated library to compute a b-bit bottom-h sketch"
 
 [profile.release]
 opt-level = 3
-# lto = true
-# codegen-units = 1
 panic = "abort"
-# strip = true
-debug = true
+strip = true
+debug = false
 incremental = true
+# slow!
+lto = true
+codegen-units = 1
+
+[profile.dev]
+opt-level = 3
+panic = "abort"
+lto = 'thin'
+debug-assertions = false
+overflow-checks = false
+
+[profile.test]
+panic = "unwind"
+debug-assertions = true
+overflow-checks = true
+
 
 [dependencies]
 clap = { version = "4.5.31", features = ["derive"] }
