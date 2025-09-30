@@ -20,6 +20,7 @@ fn main() {
             b,
             rc: true,
             filter_empty: true,
+            filter_out_n: false,
         }
         .build();
         let bucket_sketcher = simd_sketch::SketchParams {
@@ -29,6 +30,7 @@ fn main() {
             b,
             rc: true,
             filter_empty: true,
+            filter_out_n: false,
         }
         .build();
         let s1 = bottom_sketcher.sketch(seq1.as_slice());

@@ -10,23 +10,31 @@ authors = ["Ragnar Groot Koerkamp"]
 description = "A SIMD-accelerated library to compute a b-bit bottom-h sketch"
 
 [profile.release]
-lto = "thin"
+opt-level = 3
+# lto = true
+# codegen-units = 1
+panic = "abort"
+# strip = true
+debug = true
 incremental = true
-debug = false
 
 [dependencies]
 clap = { version = "4.5.31", features = ["derive"] }
 itertools = "0.14.0"
-packed-seq = "1.0.2"
-simd-minimizers = "1.0.0"
+packed-seq = "4.0.1"
 wide = "0.7.32"
 needletail = "0.6.3"
 flate2 = { version = "1.1.1", features = ["zlib-rs"] }
 rayon = "1.10.0"
 log = "0.4.27"
 env_logger = "0.11.8"
-indicatif = { version = "0.17.11", features = ["rayon"] }
+indicatif = { version = "0.18.0", features = ["rayon"] }
 bincode = "2.0.1"
+seq-hash = "0.0.1"
 
 [dev-dependencies]
 rand = "0.9.0"
+
+[patch.crates-io]
+seq-hash.path = "../seq-hash"
+packed-seq.path = "../packed-seq"

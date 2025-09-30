@@ -1,11 +1,10 @@
-#![feature(path_add_extension)]
 use std::{fs::File, io::Seek, path::PathBuf, sync::atomic::AtomicUsize};
 
 use clap::Parser;
 use indicatif::ParallelProgressIterator;
 use itertools::Itertools;
 use log::info;
-use packed_seq::{PackedSeqVec, SeqVec};
+use packed_seq::{PackedNSeqVec, PackedSeqVec, SeqVec};
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use simd_sketch::SketchParams;
 
@@ -154,14 +153,26 @@ fn main() {
                 return read_sketch(&ssketch_path);
             }
 
-            let mut seqs = vec![];
             let mut reader = needletail::parse_fastx_file(&path).unwrap();
-            while let Some(r) = reader.next() {
-                seqs.push(PackedSeqVec::from_ascii(&r.unwrap().seq()));
+
+            let mut sketch;
+            if params.filter_out_n {
+                let mut seqs = vec![];
+                while let Some(r) = reader.next() {
+                    seqs.push(PackedNSeqVec::from_ascii(&r.unwrap().seq()));
+                }
+                let slices = seqs.iter().map(|s| s.as_slice()).collect_vec();
+                num_sketched.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                sketch = sketcher.sketch_seqs(&slices);
+            }else {
+                let mut seqs = vec![];
+                while let Some(r) = reader.next() {
+                    seqs.push(PackedSeqVec::from_ascii(&r.unwrap().seq()));
+                }
+                let slices = seqs.iter().map(|s| s.as_slice()).collect_vec();
+                num_sketched.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                sketch = sketcher.sketch_seqs(&slices);
             }
-            let slices = seqs.iter().map(|s| s.as_slice()).collect_vec();
-            num_sketched.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let mut sketch = sketcher.sketch_seqs(&slices);
 
             if save_sketches {
                 num_written.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
