@@ -1,10 +1,15 @@
-use std::{fs::File, io::Seek, path::PathBuf, sync::atomic::AtomicUsize};
+use std::{
+    fs::File,
+    io::Seek,
+    path::PathBuf,
+    sync::atomic::{AtomicUsize, Ordering::Relaxed},
+};
 
 use clap::Parser;
 use indicatif::ParallelProgressIterator;
 use itertools::Itertools;
 use log::info;
-use packed_seq::{PackedNSeqVec, PackedSeqVec, SeqVec};
+use packed_seq::{PackedNSeqVec, PackedSeqVec, Seq, SeqVec};
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use simd_sketch::SketchParams;
 
@@ -122,6 +127,7 @@ fn main() {
     let num_sketched = AtomicUsize::new(0);
     let num_read = AtomicUsize::new(0);
     let num_written = AtomicUsize::new(0);
+    let total_bytes = AtomicUsize::new(0);
 
     let sketches: Vec<_> = paths
         .par_iter()
@@ -130,7 +136,7 @@ fn main() {
         .with_finish(indicatif::ProgressFinish::AndLeave)
         .map(|path| {
             let read_sketch = |path| {
-                num_read.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                num_read.fetch_add(1, Relaxed);
                 let mut file = File::open(path).unwrap();
                 // Read the first integer to check the version.
                 let version: usize =
@@ -180,7 +186,8 @@ fn main() {
                     seqs.push(PackedNSeqVec::from_ascii(&r.unwrap().seq()));
                 }
                 let slices = seqs.iter().map(|s| s.as_slice()).collect_vec();
-                num_sketched.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let size = slices.iter().map(|s| s.seq.len()).sum::<usize>();
+                total_bytes.fetch_add(size, Relaxed);
                 sketch = sketcher.sketch_seqs(&slices);
             }else {
                 let mut seqs = vec![];
@@ -188,12 +195,14 @@ fn main() {
                     seqs.push(PackedSeqVec::from_ascii(&r.unwrap().seq()));
                 }
                 let slices = seqs.iter().map(|s| s.as_slice()).collect_vec();
-                num_sketched.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let size = slices.iter().map(|s| s.len()).sum::<usize>();
+                total_bytes.fetch_add(size, Relaxed);
                 sketch = sketcher.sketch_seqs(&slices);
             }
+            num_sketched.fetch_add(1, Relaxed);
 
             if save_sketches {
-                num_written.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                num_written.fetch_add(1, Relaxed);
                 let versioned_sketch = VersionedSketch { version: SKETCH_VERSION, sketch };
                 bincode::encode_into_std_write(
                     &versioned_sketch,
@@ -210,8 +219,9 @@ fn main() {
     let t_sketch = start.elapsed();
 
     info!(
-        "Sketching {q} seqs took {t_sketch:?} ({:?} avg)",
-        t_sketch / q as u32
+        "Sketching {q} seqs took {t_sketch:?} ({:?} avg, {} MiB/s)",
+        t_sketch / q as u32,
+        total_bytes.into_inner() as f32 / t_sketch.as_secs_f32() / (1 << 20) as f32
     );
     let num_read = num_read.into_inner();
     let num_sketched = num_sketched.into_inner();
