@@ -27,7 +27,6 @@ debug-assertions = false
 overflow-checks = false
 
 [profile.test]
-panic = "unwind"
 debug-assertions = true
 overflow-checks = true
 

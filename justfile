@@ -8,9 +8,9 @@ stats := "py/stats"
 output := "output"
 
 simd_bot s: build
-    ./target/release/examples/dist {{input}} -s {{s}}                   --stats {{stats}} > {{output}}/simd_bottom_s{{s}}.dist
+    ./target/release/examples/dist {{input}} -s {{s}}          --alg bottom --stats {{stats}} > {{output}}/simd_bottom_s{{s}}.dist
 simd_bucket s b: build
-    ./target/release/examples/dist {{input}} -s {{s}} -b {{b}} --bucket --stats {{stats}} > {{output}}/simd_bucket_s{{s}}_b{{b}}.dist
+    ./target/release/examples/dist {{input}} -s {{s}} -b {{b}} --alg bucket --stats {{stats}} > {{output}}/simd_bucket_s{{s}}_b{{b}}.dist
 
 simd_bot_all: (simd_bot "128") (simd_bot "1024") (simd_bot "8192") (simd_bot "32768") (simd_bot "65536")
 simd_bucket_all_b s: (simd_bucket s "1") (simd_bucket s "8") (simd_bucket s "16") (simd_bucket s "32")

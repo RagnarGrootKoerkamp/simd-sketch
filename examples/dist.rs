@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use itertools::Itertools;
 use log::{info, trace};
-use packed_seq::{AsciiSeqVec, SeqVec};
+use packed_seq::{PackedSeqVec, SeqVec};
 use simd_sketch::SketchParams;
 use std::io::Write;
 
@@ -30,7 +30,7 @@ fn main() {
     let b = args.params.b;
 
     let sketcher = SketchParams {
-        alg: simd_sketch::SketchAlg::Bucket,
+        alg: args.params.alg,
         rc: true,
         k,
         s,
@@ -45,23 +45,16 @@ fn main() {
 
     for path in paths {
         trace!("Sketching {path:?}");
-        let mut seq = AsciiSeqVec::default();
         let mut reader = needletail::parse_fastx_file(path).unwrap();
         let start = std::time::Instant::now();
+        let mut seqs = vec![];
         while let Some(r) = reader.next() {
-            // let record = r
-            //     .unwrap()
-            //     .seq();
-            // .iter()
-            // .filter_map(|&b| if b == b'N' { None } else { Some(b) })
-            // .collect::<Vec<_>>();
-            // seq.push_ascii(&record);
-            seq.push_ascii(&r.unwrap().seq());
-            // FIXME: Skip adjacent k-mers.
+            seqs.push(PackedSeqVec::from_ascii(&r.unwrap().seq()));
         }
         trace!("Reading & filtering took {:?}", start.elapsed());
         let start = std::time::Instant::now();
-        sketches.push(sketcher.sketch(seq.as_slice()));
+        let seqs = seqs.iter().map(|s| s.as_slice()).collect_vec();
+        sketches.push(sketcher.sketch_seqs(&seqs));
         trace!("sketching itself took {:?}", start.elapsed());
     }
     let t_sketch = start.elapsed();
