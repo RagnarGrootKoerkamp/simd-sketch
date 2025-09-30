@@ -140,7 +140,7 @@ use std::sync::atomic::{
     Ordering::{Relaxed, SeqCst},
 };
 
-use log::{debug, info};
+use log::debug;
 use packed_seq::{u32x8, ChunkIt, PackedNSeq, PaddedIt, Seq};
 use seq_hash::KmerHasher;
 
@@ -308,7 +308,7 @@ impl BucketSketch {
         assert_eq!(self.b, other.b);
         let both_empty = self.both_empty(other);
         if both_empty > 0 {
-            info!("Both empty: {}", both_empty);
+            debug!("Both empty: {}", both_empty);
         }
         match (&self.buckets, &other.buckets) {
             (BitSketch::B32(a), BitSketch::B32(b)) => Self::inner_similarity(a, b, both_empty),
@@ -547,10 +547,10 @@ impl Sketcher {
                 }
                 if bound == u32::MAX || empty == 0 {
                     if empty > 0 {
-                        info!("Found {empty} empty buckets.");
+                        debug!("Found {empty} empty buckets.");
                     }
                     let empty = if empty > 0 && self.params.filter_empty {
-                        info!("Found {empty} empty buckets. Storing bitmask.");
+                        debug!("Found {empty} empty buckets. Storing bitmask.");
                         buckets
                             .chunks(64)
                             .map(|xs| {
@@ -589,17 +589,16 @@ impl Sketcher {
 
     fn collect_up_to_bound<'s>(&self, seqs: &[impl Sketchable], bound: u32, out: &mut Vec<u32>) {
         let simd_bound = u32x8::splat(bound);
-        out.clear();
 
         if self.params.rc {
             for &seq in seqs {
                 let hashes = seq.hash_kmers(&self.rc_hasher);
-                collect_impl(out, simd_bound, hashes);
+                collect_impl(simd_bound, hashes, out);
             }
         } else {
             for &seq in seqs {
                 let hashes = seq.hash_kmers(&self.fwd_hasher);
-                collect_impl(out, simd_bound, hashes);
+                collect_impl(simd_bound, hashes, out);
             }
         }
         debug!(
@@ -610,8 +609,9 @@ impl Sketcher {
     }
 }
 
-fn collect_impl(out: &mut Vec<u32>, simd_bound: u32x8, hashes: PaddedIt<impl ChunkIt<u32x8>>) {
-    let mut write_idx = out.len();
+fn collect_impl(simd_bound: u32x8, hashes: PaddedIt<impl ChunkIt<u32x8>>, out: &mut Vec<u32>) {
+    out.clear();
+    let mut write_idx = 0;
     let lane_len = hashes.it.len();
     let mut idx = u32x8::from(std::array::from_fn(|i| (i * lane_len) as u32));
     let max_idx = (8 * lane_len - hashes.padding) as u32;
