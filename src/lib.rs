@@ -697,6 +697,8 @@ impl FM32 {
 
 #[cfg(test)]
 mod test {
+    use std::hint::black_box;
+
     use super::*;
     use packed_seq::SeqVec;
 
@@ -832,5 +834,16 @@ mod test {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_collect() {
+        let mut out = vec![];
+        let n = black_box(8000);
+        let it = (0..n).map(|x| u32x8::splat((x as u32).wrapping_mul(546786567)));
+        let padded_it = PaddedIt { it, padding: 0 };
+        let bound = black_box(u32::MAX / 10);
+        collect_impl(bound, padded_it, &mut out);
+        eprintln!("{out:?}");
     }
 }
