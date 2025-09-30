@@ -162,17 +162,13 @@ fn main() {
                 return sketch;
             };
 
+            // Input path is a .ssketch file.
             if path.extension().is_some_and(|ext| ext == EXTENSION) {
                 return read_sketch(path);
             }
 
-            let ssketch_path = {
-                // TODO: Use path.add_extension(EXTENSION) when stable.
-                // https://doc.rust-lang.org/std/path/struct.Path.html#method.with_added_extension
-                let filename = path.file_name().unwrap();
-                let new_filename = format!("{}.{}", filename.to_str().unwrap(), EXTENSION);
-                path.with_file_name(new_filename)
-            };
+            // Input path is a .fa, and the .fa.ssketch file exists.
+            let ssketch_path = path.with_extension(EXTENSION);
             if ssketch_path.exists() {
                 return read_sketch(&ssketch_path);
             }
