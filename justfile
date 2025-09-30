@@ -14,9 +14,8 @@ simd_bucket s b: build
 
 simd_bot_all: (simd_bot "128") (simd_bot "1024") (simd_bot "8192") (simd_bot "32768") (simd_bot "65536")
 simd_bucket_all_b s: (simd_bucket s "1") (simd_bucket s "8") (simd_bucket s "16") (simd_bucket s "32")
-simd_bucket_all: (simd_bucket_all_b "128") (simd_bucket_all_b "1024") (simd_bucket_all_b "8192") (simd_bucket_all_b "32768")
-
-simd_bucket_16: (simd_bucket "128" "16") (simd_bucket "1024" "16") (simd_bucket "8192" "16") (simd_bucket "32768" "16")
+simd_bucket_all: (simd_bucket_all_b "128") (simd_bucket_all_b "1024") (simd_bucket_all_b "8192") (simd_bucket_all_b "32768") (simd_bucket "131072" "1")
+simd_all: (simd_bot_all) (simd_bucket_all)
 
 bindash_bot s:
     time -f %U ./bindash sketch {{input}}/*fa --minhashtype=0 --kmerlen=31 --sketchsize={{s}} --outfname={{output}}/tmp 2>&1 | tee >(cat 1>&2) | tail -1 > {{output}}/tmp_sketch_time

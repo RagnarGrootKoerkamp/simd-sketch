@@ -89,9 +89,10 @@ for i, (group, title) in enumerate(groups):
 
     plt.subplot(3, 3, i + 1)
     for name, d in zip(names, dists):
-        print(f"plotting len")
+        # print(f"plotting len")
         # extract value of s from name, _s\d+_
         c = correlation(d0, d)
+        print(c)
         plt.scatter(
             [d0[idx] for idx in indices],
             [d[idx] for idx in indices],
