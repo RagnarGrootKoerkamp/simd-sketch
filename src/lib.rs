@@ -415,12 +415,12 @@ impl SketchParams {
             SketchAlg::Bottom => {
                 // Clear out redundant value.
                 params.b = 0;
-                factor = 13;
+                factor = 13; // 1.3 * 10
             }
             SketchAlg::Bucket => {
                 // To fill s buckets, we need ln(s)*s elements.
                 // lg(s) is already a bit larger.
-                factor = params.s.ilog2() as u64 * 5;
+                factor = params.s.ilog2() as u64 * 10; // 1.0 * 10
             }
         }
         if params.alg == SketchAlg::Bottom {}
