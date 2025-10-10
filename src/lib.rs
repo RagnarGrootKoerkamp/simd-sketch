@@ -251,9 +251,9 @@ impl BitSketch {
 /// A sketch containing the `s` smallest k-mer hashes.
 #[derive(bincode::Encode, bincode::Decode, Debug)]
 pub struct BottomSketch {
-    rc: bool,
-    k: usize,
-    bottom: Vec<u32>,
+    pub rc: bool,
+    pub k: usize,
+    pub bottom: Vec<u32>,
 }
 
 impl BottomSketch {
@@ -289,12 +289,12 @@ impl BottomSketch {
 /// A sketch containing the smallest k-mer hash for each remainder mod `s`.
 #[derive(bincode::Encode, bincode::Decode, Debug)]
 pub struct BucketSketch {
-    rc: bool,
-    k: usize,
-    b: usize,
-    buckets: BitSketch,
+    pub rc: bool,
+    pub k: usize,
+    pub b: usize,
+    pub buckets: BitSketch,
     /// Bit-vector indicating empty buckets, so the similarity score can be adjusted accordingly.
-    empty: Vec<u64>,
+    pub empty: Vec<u64>,
 }
 
 impl BucketSketch {
