@@ -183,6 +183,7 @@ impl Sketch {
                 s: sketch.bottom.len(),
                 b: 0,
                 duplicate: sketch.duplicate,
+                coverage: 1,
                 filter_empty: false,
                 filter_out_n: false, // FIXME
             },
@@ -193,6 +194,7 @@ impl Sketch {
                 s: sketch.buckets.len(),
                 b: sketch.b,
                 duplicate: sketch.duplicate,
+                coverage: 1,
                 filter_empty: false,
                 filter_out_n: false, // FIXME
             },
@@ -400,6 +402,10 @@ pub struct SketchParams {
     /// Sketch only duplicate (non-unique) kmers.
     #[arg(long)]
     pub duplicate: bool,
+    /// When sketching read sets of coverage >1, set this for a better initial estimate for the threshold on kmer hashes.
+    #[arg(short, long, default_value_t = 1)]
+    pub coverage: usize,
+
     /// For bucket-sketch, store a bitmask of empty buckets, to increase accuracy on small genomes.
     #[arg(skip = true)]
     pub filter_empty: bool,
@@ -456,6 +462,7 @@ impl SketchParams {
             s: 32768,
             b: 1,
             duplicate: false,
+            coverage: 1,
             filter_empty: true,
             filter_out_n: false,
         }
@@ -471,6 +478,7 @@ impl SketchParams {
             s: 8192,
             b: 8,
             duplicate: false,
+            coverage: 1,
             filter_empty: false,
             filter_out_n: false,
         }
@@ -509,7 +517,9 @@ impl Sketcher {
         let n = self.num_kmers(seqs);
         let mut out = vec![];
         loop {
-            let target = u32::MAX as usize * self.params.s / n;
+            // The total number of kmers is roughly n/coverage.
+            // We want s of those, so scale u32::MAX by s/(n/coverage).
+            let target = u32::MAX as usize * self.params.s / (n / self.params.coverage);
             let factor = self.factor.load(Relaxed);
             let bound = (target as u128 * factor as u128 / 10 as u128).min(u32::MAX as u128) as u32;
 
@@ -556,7 +566,9 @@ impl Sketcher {
         let mut out = vec![];
         let mut buckets = vec![u32::MAX; self.params.s];
         loop {
-            let target = u32::MAX as usize * self.params.s / n;
+            // The total number of kmers is roughly n/coverage.
+            // We want s of those, so scale u32::MAX by s/(n/coverage).
+            let target = u32::MAX as usize * self.params.s / (n / self.params.coverage);
             let factor = self.factor.load(Relaxed);
             let bound = (target as u128 * factor as u128 / 10 as u128).min(u32::MAX as u128) as u32;
 
@@ -785,6 +797,7 @@ mod test {
                     s,
                     b,
                     duplicate: false,
+                    coverage: 1,
                     filter_empty: false,
                     filter_out_n: true,
                 }
@@ -802,6 +815,7 @@ mod test {
                     s,
                     b,
                     duplicate: false,
+                    coverage: 1,
                     filter_empty: false,
                     filter_out_n: true,
                 }
@@ -828,6 +842,7 @@ mod test {
                             s,
                             b,
                             duplicate: false,
+                            coverage: 1,
                             filter_empty: false,
                             filter_out_n: true,
                         }
@@ -866,6 +881,7 @@ mod test {
                 s,
                 b,
                 duplicate: false,
+                coverage: 1,
                 filter_empty,
                 filter_out_n: false,
             }
@@ -896,6 +912,7 @@ mod test {
                         s,
                         b,
                         duplicate: false,
+                        coverage: 1,
                         filter_empty,
                         filter_out_n: false,
                     }

@@ -20,6 +20,7 @@ fn main() {
             b,
             rc: true,
             duplicate: false,
+            coverage: 1,
             filter_empty: true,
             filter_out_n: false,
         }
@@ -31,6 +32,7 @@ fn main() {
             b,
             rc: true,
             duplicate: false,
+            coverage: 1,
             filter_empty: true,
             filter_out_n: false,
         }

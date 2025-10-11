@@ -29,6 +29,7 @@ fn main() {
     let s = args.params.s;
     let b = args.params.b;
     let duplicate = args.params.duplicate;
+    let coverage = args.params.coverage;
 
     let sketcher = SketchParams {
         alg: args.params.alg,
@@ -37,6 +38,7 @@ fn main() {
         s,
         b,
         duplicate,
+        coverage,
         filter_empty: true,
         filter_out_n: false,
     }
