@@ -52,3 +52,7 @@ default = ["needletail/compression", "clap/default", "env_logger/default"]
 
 [dev-dependencies]
 rand = "0.9.0"
+
+[patch.crates-io]
+packed-seq.git = "https://github.com/rust-seq/packed-seq"
+seq-hash.git = "https://github.com/rust-seq/seq-hash"
