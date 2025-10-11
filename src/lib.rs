@@ -554,7 +554,9 @@ impl Sketcher {
                 let m = FM32::new(self.params.s as u32);
                 for &hash in &out {
                     let bucket = m.fastmod(hash);
-                    buckets[bucket] = buckets[bucket].min(hash);
+                    debug_assert!(bucket < buckets.len());
+                    let val = unsafe { buckets.get_unchecked_mut(bucket) };
+                    *val = (*val).min(hash);
                 }
                 for &x in &buckets {
                     if x == u32::MAX {
