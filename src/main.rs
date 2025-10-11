@@ -9,7 +9,7 @@ use clap::Parser;
 use indicatif::ParallelProgressIterator;
 use itertools::Itertools;
 use log::info;
-use packed_seq::{PackedNSeqVec, PackedSeqVec, Seq, SeqVec};
+use packed_seq::{PackedNSeqVec, PackedSeqVec, SeqVec};
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use simd_sketch::SketchParams;
 
@@ -177,29 +177,38 @@ fn main() {
 
             let mut sketch;
             if params.filter_out_n {
-                let mut seqs = vec![];
+                let mut ranges = vec![];
+                let mut seq = PackedNSeqVec::default();
+                let mut size = 0;
                 while let Some(r) = reader.next() {
-                    seqs.push(PackedNSeqVec::from_ascii(&r.unwrap().seq()));
+                    let range = seq.push_ascii(&r.unwrap().seq());
+                    size += range.len();
+                    ranges.push(range);
                 }
-                let slices = seqs.iter().map(|s| s.as_slice()).collect_vec();
-                let size = slices.iter().map(|s| s.seq.len()).sum::<usize>();
                 total_bytes.fetch_add(size, Relaxed);
+                let slices = ranges.into_iter().map(|r| seq.slice(r)).collect_vec();
                 sketch = sketcher.sketch_seqs(&slices);
-            }else {
-                let mut seqs = vec![];
+            } else {
+                let mut ranges = vec![];
+                let mut seq = PackedSeqVec::default();
+                let mut size = 0;
                 while let Some(r) = reader.next() {
-                    seqs.push(PackedSeqVec::from_ascii(&r.unwrap().seq()));
+                    let range = seq.push_ascii(&r.unwrap().seq());
+                    size += range.len();
+                    ranges.push(range);
                 }
-                let slices = seqs.iter().map(|s| s.as_slice()).collect_vec();
-                let size = slices.iter().map(|s| s.len()).sum::<usize>();
                 total_bytes.fetch_add(size, Relaxed);
+                let slices = ranges.into_iter().map(|r| seq.slice(r)).collect_vec();
                 sketch = sketcher.sketch_seqs(&slices);
             }
             num_sketched.fetch_add(1, Relaxed);
 
             if save_sketches {
                 num_written.fetch_add(1, Relaxed);
-                let versioned_sketch = VersionedSketch { version: SKETCH_VERSION, sketch };
+                let versioned_sketch = VersionedSketch {
+                    version: SKETCH_VERSION,
+                    sketch,
+                };
                 bincode::encode_into_std_write(
                     &versioned_sketch,
                     &mut File::create(ssketch_path).unwrap(),
