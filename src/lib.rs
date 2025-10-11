@@ -1,3 +1,4 @@
+#![feature(hash_set_entry)]
 //! # SimdSketch
 //!
 //! This library provides two types of sequence sketches:
@@ -135,10 +136,13 @@
 
 mod intrinsics;
 
-use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use std::{
+    collections::{HashSet, hash_set::Entry},
+    sync::atomic::{AtomicU64, Ordering::Relaxed},
+};
 
 use log::debug;
-use packed_seq::{u32x8, ChunkIt, PackedNSeq, PaddedIt, Seq};
+use packed_seq::{ChunkIt, PackedNSeq, PaddedIt, Seq, u32x8};
 use seq_hash::KmerHasher;
 
 /// Use the classic rotate-by-1 for backwards compatibility.
@@ -178,6 +182,7 @@ impl Sketch {
                 k: sketch.k,
                 s: sketch.bottom.len(),
                 b: 0,
+                duplicate: sketch.duplicate,
                 filter_empty: false,
                 filter_out_n: false, // FIXME
             },
@@ -187,6 +192,7 @@ impl Sketch {
                 k: sketch.k,
                 s: sketch.buckets.len(),
                 b: sketch.b,
+                duplicate: sketch.duplicate,
                 filter_empty: false,
                 filter_out_n: false, // FIXME
             },
@@ -253,6 +259,7 @@ impl BitSketch {
 pub struct BottomSketch {
     pub rc: bool,
     pub k: usize,
+    pub duplicate: bool,
     pub bottom: Vec<u32>,
 }
 
@@ -292,6 +299,7 @@ pub struct BucketSketch {
     pub rc: bool,
     pub k: usize,
     pub b: usize,
+    pub duplicate: bool,
     pub buckets: BitSketch,
     /// Bit-vector indicating empty buckets, so the similarity score can be adjusted accordingly.
     pub empty: Vec<u64>,
@@ -388,6 +396,10 @@ pub struct SketchParams {
     /// For bucket-sketch, store only the lower b bits.
     #[arg(short, default_value_t = 8)]
     pub b: usize,
+
+    /// Sketch only duplicate (non-unique) kmers.
+    #[arg(long)]
+    pub duplicate: bool,
     /// For bucket-sketch, store a bitmask of empty buckets, to increase accuracy on small genomes.
     #[arg(skip = true)]
     pub filter_empty: bool,
@@ -443,6 +455,7 @@ impl SketchParams {
             k,
             s: 32768,
             b: 1,
+            duplicate: false,
             filter_empty: true,
             filter_out_n: false,
         }
@@ -457,6 +470,7 @@ impl SketchParams {
             k,
             s: 8192,
             b: 8,
+            duplicate: false,
             filter_empty: false,
             filter_out_n: false,
         }
@@ -501,6 +515,10 @@ impl Sketcher {
 
             self.collect_up_to_bound(seqs, bound, &mut out);
 
+            if self.params.duplicate {
+                panic!("Bottom-sketching only duplicate kmers is not implemented yet.");
+            }
+
             if bound == u32::MAX || out.len() >= self.params.s {
                 out.sort_unstable();
                 let old_len = out.len();
@@ -513,6 +531,7 @@ impl Sketcher {
                     return BottomSketch {
                         rc: self.params.rc,
                         k: self.params.k,
+                        duplicate: self.params.duplicate,
                         bottom: out,
                     };
                 }
@@ -552,11 +571,41 @@ impl Sketcher {
             let mut empty = 0;
             if bound == u32::MAX || out.len() >= self.params.s {
                 let m = FM32::new(self.params.s as u32);
-                for &hash in &out {
-                    let bucket = m.fastmod(hash);
-                    debug_assert!(bucket < buckets.len());
-                    let val = unsafe { buckets.get_unchecked_mut(bucket) };
-                    *val = (*val).min(hash);
+
+                let mut seen = HashSet::with_capacity(4 * self.params.s);
+
+                if !self.params.duplicate {
+                    for &hash in &out {
+                        let bucket = m.fastmod(hash);
+                        debug_assert!(bucket < buckets.len());
+                        let min = unsafe { buckets.get_unchecked_mut(bucket) };
+                        *min = (*min).min(hash);
+                    }
+                } else {
+                    for &hash in &out {
+                        let bucket = m.fastmod(hash);
+                        debug_assert!(bucket < buckets.len());
+                        let min = unsafe { buckets.get_unchecked_mut(bucket) };
+
+                        if hash >= *min {
+                            continue;
+                        }
+
+                        match seen.entry(hash) {
+                            Entry::Vacant(e) => {
+                                e.insert();
+                            }
+                            Entry::Occupied(e) => {
+                                e.remove();
+                                *min = hash;
+                            }
+                        }
+                    }
+                    debug!(
+                        "Hashset size: {} ({:>5.2}%)",
+                        seen.len(),
+                        seen.len() as f32 / out.len() as f32 * 100.0
+                    );
                 }
                 for &x in &buckets {
                     if x == u32::MAX {
@@ -585,6 +634,7 @@ impl Sketcher {
                         rc: self.params.rc,
                         k: self.params.k,
                         b: self.params.b,
+                        duplicate: self.params.duplicate,
                         empty,
                         buckets: BitSketch::new(
                             self.params.b,
@@ -734,6 +784,7 @@ mod test {
                     k,
                     s,
                     b,
+                    duplicate: false,
                     filter_empty: false,
                     filter_out_n: true,
                 }
@@ -750,6 +801,7 @@ mod test {
                     k,
                     s,
                     b,
+                    duplicate: false,
                     filter_empty: false,
                     filter_out_n: true,
                 }
@@ -775,6 +827,7 @@ mod test {
                             k,
                             s,
                             b,
+                            duplicate: false,
                             filter_empty: false,
                             filter_out_n: true,
                         }
@@ -812,6 +865,7 @@ mod test {
                 k,
                 s,
                 b,
+                duplicate: false,
                 filter_empty,
                 filter_out_n: false,
             }
@@ -841,6 +895,7 @@ mod test {
                         k,
                         s,
                         b,
+                        duplicate: false,
                         filter_empty,
                         filter_out_n: false,
                     }

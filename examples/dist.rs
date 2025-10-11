@@ -28,6 +28,7 @@ fn main() {
     let k = args.params.k;
     let s = args.params.s;
     let b = args.params.b;
+    let duplicate = args.params.duplicate;
 
     let sketcher = SketchParams {
         alg: args.params.alg,
@@ -35,6 +36,7 @@ fn main() {
         k,
         s,
         b,
+        duplicate,
         filter_empty: true,
         filter_out_n: false,
     }

@@ -19,6 +19,7 @@ fn main() {
             s,
             b,
             rc: true,
+            duplicate: false,
             filter_empty: true,
             filter_out_n: false,
         }
@@ -29,6 +30,7 @@ fn main() {
             s,
             b,
             rc: true,
+            duplicate: false,
             filter_empty: true,
             filter_out_n: false,
         }
