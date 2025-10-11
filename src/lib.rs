@@ -227,11 +227,11 @@ pub enum BitSketch {
 }
 
 impl BitSketch {
-    fn new(b: usize, vals: Vec<u32>) -> Self {
+    fn new(b: usize, vals: &Vec<u32>) -> Self {
         match b {
-            32 => BitSketch::B32(vals),
-            16 => BitSketch::B16(vals.into_iter().map(|x| x as u16).collect()),
-            8 => BitSketch::B8(vals.into_iter().map(|x| x as u8).collect()),
+            32 => BitSketch::B32(vals.clone()),
+            16 => BitSketch::B16(vals.iter().map(|x| *x as u16).collect()),
+            8 => BitSketch::B8(vals.iter().map(|x| *x as u8).collect()),
             1 => BitSketch::B1({
                 assert_eq!(vals.len() % 64, 0);
                 vals.chunks_exact(64)
@@ -563,108 +563,121 @@ impl Sketcher {
     fn bucket_sketch<'s>(&self, seqs: &[impl Sketchable]) -> BucketSketch {
         // Iterate all kmers and compute 32bit nthashes.
         let n = self.num_kmers(seqs);
-        let mut out = vec![];
-        let mut buckets = vec![u32::MAX; self.params.s];
-        loop {
-            // The total number of kmers is roughly n/coverage.
-            // We want s of those, so scale u32::MAX by s/(n/coverage).
-            let target = u32::MAX as usize * self.params.s / (n / self.params.coverage);
-            let factor = self.factor.load(Relaxed);
-            let bound = (target as u128 * factor as u128 / 10 as u128).min(u32::MAX as u128) as u32;
 
-            debug!(
-                "n {n:>10} s {} target {target:>10} factor {factor:>3} bound {bound:>10} ({:>6.3}%)",
-                self.params.s,
-                bound as f32 / u32::MAX as f32 * 100.0,
-            );
-
-            self.collect_up_to_bound(seqs, bound, &mut out);
-
-            let mut empty = 0;
-            if bound == u32::MAX || out.len() >= self.params.s {
-                let m = FM32::new(self.params.s as u32);
-
-                let mut seen = HashSet::with_capacity(4 * self.params.s);
-
-                if !self.params.duplicate {
-                    for &hash in &out {
-                        let bucket = m.fastmod(hash);
-                        debug_assert!(bucket < buckets.len());
-                        let min = unsafe { buckets.get_unchecked_mut(bucket) };
-                        *min = (*min).min(hash);
-                    }
-                } else {
-                    for &hash in &out {
-                        let bucket = m.fastmod(hash);
-                        debug_assert!(bucket < buckets.len());
-                        let min = unsafe { buckets.get_unchecked_mut(bucket) };
-
-                        if hash >= *min {
-                            continue;
-                        }
-
-                        match seen.entry(hash) {
-                            Entry::Vacant(e) => {
-                                e.insert();
-                            }
-                            Entry::Occupied(e) => {
-                                e.remove();
-                                *min = hash;
-                            }
-                        }
-                    }
-                    debug!(
-                        "Hashset size: {} ({:>5.2}%)",
-                        seen.len(),
-                        seen.len() as f32 / out.len() as f32 * 100.0
-                    );
-                }
-                for &x in &buckets {
-                    if x == u32::MAX {
-                        empty += 1;
-                    }
-                }
-                if bound == u32::MAX || empty == 0 {
-                    if empty > 0 {
-                        debug!("Found {empty} empty buckets.");
-                    }
-                    let empty = if empty > 0 && self.params.filter_empty {
-                        debug!("Found {empty} empty buckets. Storing bitmask.");
-                        buckets
-                            .chunks(64)
-                            .map(|xs| {
-                                xs.iter().enumerate().fold(0u64, |bits, (i, x)| {
-                                    bits | (((*x == u32::MAX) as u64) << i)
-                                })
-                            })
-                            .collect()
-                    } else {
-                        vec![]
-                    };
-
-                    return BucketSketch {
-                        rc: self.params.rc,
-                        k: self.params.k,
-                        b: self.params.b,
-                        duplicate: self.params.duplicate,
-                        empty,
-                        buckets: BitSketch::new(
-                            self.params.b,
-                            buckets.into_iter().map(|x| m.fastdiv(x) as u32).collect(),
-                        ),
-                    };
-                }
-            }
-
-            let new_factor = factor + factor.div_ceil(4);
-            let prev = self.factor.fetch_max(new_factor, Relaxed);
-            debug!(
-                "Found only {:>10} of {:>10} ({:>6.3}%, {empty:>5} empty) Increasing factor from {factor} to {new_factor} (was already {prev})",
-                out.len(),
-                self.params.s,
-                out.len() as f32 / self.params.s as f32 * 100.,
-            );
+        thread_local! {
+            static CACHE: std::cell::RefCell<(Vec<u32>, Vec<u32>)> = std::cell::RefCell::new((vec![], vec![]));
         }
+
+        CACHE.with_borrow_mut(|(out, buckets)| {
+            out.clear();
+            // let mut out = vec![];
+            // let mut buckets = vec![u32::MAX; self.params.s];
+            buckets.clear();
+            buckets.resize(self.params.s, u32::MAX);
+
+            loop {
+                // The total number of kmers is roughly n/coverage.
+                // We want s of those, so scale u32::MAX by s/(n/coverage).
+                let target = u32::MAX as usize * self.params.s / (n / self.params.coverage);
+                let factor = self.factor.load(Relaxed);
+                let bound = (target as u128 * factor as u128 / 10 as u128).min(u32::MAX as u128) as u32;
+
+                debug!(
+                    "n {n:>10} s {} target {target:>10} factor {factor:>3} bound {bound:>10} ({:>6.3}%)",
+                    self.params.s,
+                    bound as f32 / u32::MAX as f32 * 100.0,
+                );
+
+                self.collect_up_to_bound(seqs, bound, out);
+
+                let mut empty = 0;
+                if bound == u32::MAX || out.len() >= self.params.s {
+                    let m = FM32::new(self.params.s as u32);
+
+                    let mut seen = HashSet::with_capacity(4 * self.params.s);
+
+                    if !self.params.duplicate {
+                        for &hash in &*out {
+                            let bucket = m.fastmod(hash);
+                            debug_assert!(bucket < buckets.len());
+                            let min = unsafe { buckets.get_unchecked_mut(bucket) };
+                            *min = (*min).min(hash);
+                        }
+                    } else {
+                        for &hash in &*out {
+                            let bucket = m.fastmod(hash);
+                            debug_assert!(bucket < buckets.len());
+                            let min = unsafe { buckets.get_unchecked_mut(bucket) };
+
+                            if hash >= *min {
+                                continue;
+                            }
+
+                            match seen.entry(hash) {
+                                Entry::Vacant(e) => {
+                                    e.insert();
+                                }
+                                Entry::Occupied(e) => {
+                                    e.remove();
+                                    *min = hash;
+                                }
+                            }
+                        }
+                        debug!(
+                            "Hashset size: {} ({:>5.2}%)",
+                            seen.len(),
+                            seen.len() as f32 / out.len() as f32 * 100.0
+                        );
+                    }
+                    for &x in &*buckets {
+                        if x == u32::MAX {
+                            empty += 1;
+                        }
+                    }
+                    if bound == u32::MAX || empty == 0 {
+                        if empty > 0 {
+                            debug!("Found {empty} empty buckets.");
+                        }
+                        let empty = if empty > 0 && self.params.filter_empty {
+                            debug!("Found {empty} empty buckets. Storing bitmask.");
+                            buckets
+                                .chunks(64)
+                                .map(|xs| {
+                                    xs.iter().enumerate().fold(0u64, |bits, (i, x)| {
+                                        bits | (((*x == u32::MAX) as u64) << i)
+                                    })
+                                })
+                                .collect()
+                        } else {
+                            vec![]
+                        };
+
+                        // Reduce buckets mod m.
+                        buckets.iter_mut().for_each(|x| *x =  m.fastdiv(*x) as u32);
+                        return BucketSketch {
+                            rc: self.params.rc,
+                            k: self.params.k,
+                            b: self.params.b,
+                            duplicate: self.params.duplicate,
+                            empty,
+                            buckets: BitSketch::new(
+                                self.params.b,
+                                &buckets,
+                            ),
+                        };
+                    }
+                }
+
+                let new_factor = factor + factor.div_ceil(4);
+                let prev = self.factor.fetch_max(new_factor, Relaxed);
+                debug!(
+                    "Found only {:>10} of {:>10} ({:>6.3}%, {empty:>5} empty) Increasing factor from {factor} to {new_factor} (was already {prev})",
+                    out.len(),
+                    self.params.s,
+                    out.len() as f32 / self.params.s as f32 * 100.,
+                );
+            }
+        })
     }
 
     fn collect_up_to_bound<'s>(&self, seqs: &[impl Sketchable], bound: u32, out: &mut Vec<u32>) {
