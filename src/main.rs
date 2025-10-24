@@ -31,6 +31,8 @@ enum Command {
         paths: Vec<PathBuf>,
         #[arg(long, short = 'j')]
         threads: Option<usize>,
+        #[arg(long)]
+        no_save: bool,
     },
     /// Compute the distance between two sequences.
     Dist {
@@ -106,7 +108,7 @@ fn main() {
     };
 
     let save_sketches = match &args.command {
-        Command::Sketch { .. } => true,
+        Command::Sketch { no_save, .. } => !no_save,
         Command::Dist { .. } => false,
         Command::Triangle { save_sketches, .. } => *save_sketches,
     };
