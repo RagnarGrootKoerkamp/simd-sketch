@@ -37,6 +37,7 @@ fn main() {
         k,
         s,
         b,
+        seed: 0,
         duplicate,
         coverage,
         filter_empty: true,

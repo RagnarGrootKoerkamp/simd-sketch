@@ -182,6 +182,7 @@ impl Sketch {
                 k: sketch.k,
                 s: sketch.bottom.len(),
                 b: 0,
+                seed: 0,
                 duplicate: sketch.duplicate,
                 coverage: 1,
                 filter_empty: false,
@@ -193,6 +194,7 @@ impl Sketch {
                 k: sketch.k,
                 s: sketch.buckets.len(),
                 b: sketch.b,
+                seed: 0,
                 duplicate: sketch.duplicate,
                 coverage: 1,
                 filter_empty: false,
@@ -261,6 +263,7 @@ impl BitSketch {
 pub struct BottomSketch {
     pub rc: bool,
     pub k: usize,
+    pub seed: u32,
     pub duplicate: bool,
     pub bottom: Vec<u32>,
 }
@@ -301,6 +304,7 @@ pub struct BucketSketch {
     pub rc: bool,
     pub k: usize,
     pub b: usize,
+    pub seed: u32,
     pub duplicate: bool,
     pub buckets: BitSketch,
     /// Bit-vector indicating empty buckets, so the similarity score can be adjusted accordingly.
@@ -398,6 +402,9 @@ pub struct SketchParams {
     /// For bucket-sketch, store only the lower b bits.
     #[arg(short, default_value_t = 8)]
     pub b: usize,
+    /// Seed for the hasher.
+    #[arg(long, default_value_t = 0)]
+    pub seed: u32,
 
     /// Sketch only duplicate (non-unique) kmers.
     #[arg(long)]
@@ -444,8 +451,8 @@ impl SketchParams {
         if params.alg == SketchAlg::Bottom {}
         Sketcher {
             params,
-            rc_hasher: RcNtHasher::new(params.k),
-            fwd_hasher: FwdNtHasher::new(params.k),
+            rc_hasher: RcNtHasher::new_with_seed(params.k, params.seed),
+            fwd_hasher: FwdNtHasher::new_with_seed(params.k, params.seed),
             factor: AtomicU64::new(factor),
         }
     }
@@ -461,6 +468,7 @@ impl SketchParams {
             k,
             s: 32768,
             b: 1,
+            seed: 0,
             duplicate: false,
             coverage: 1,
             filter_empty: true,
@@ -477,6 +485,7 @@ impl SketchParams {
             k,
             s: 8192,
             b: 8,
+            seed: 0,
             duplicate: false,
             coverage: 1,
             filter_empty: false,
@@ -658,6 +667,7 @@ impl Sketcher {
                             rc: self.params.rc,
                             k: self.params.k,
                             b: self.params.b,
+                            seed: self.params.seed,
                             duplicate: self.params.duplicate,
                             empty,
                             buckets: BitSketch::new(
@@ -809,6 +819,7 @@ mod test {
                     k,
                     s,
                     b,
+                    seed: 0,
                     duplicate: false,
                     coverage: 1,
                     filter_empty: false,
@@ -827,6 +838,7 @@ mod test {
                     k,
                     s,
                     b,
+                    seed: 0,
                     duplicate: false,
                     coverage: 1,
                     filter_empty: false,
@@ -854,6 +866,7 @@ mod test {
                             k,
                             s,
                             b,
+                            seed: 0,
                             duplicate: false,
                             coverage: 1,
                             filter_empty: false,
@@ -893,6 +906,7 @@ mod test {
                 k,
                 s,
                 b,
+                seed: 0,
                 duplicate: false,
                 coverage: 1,
                 filter_empty,
@@ -924,6 +938,7 @@ mod test {
                         k,
                         s,
                         b,
+                        seed: 0,
                         duplicate: false,
                         coverage: 1,
                         filter_empty,
