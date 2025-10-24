@@ -501,8 +501,9 @@ checksum = "a4895175b425cb1f87721b59f0f286c2092bd4af812243672510e1ac53e2e0ad"
 
 [[package]]
 name = "packed-seq"
-version = "4.1.1"
-source = "git+https://github.com/rust-seq/packed-seq#12c58ba5352bedd3f506710a73626e192f624742"
+version = "4.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "534d46109326ee0a3f0e157c305cf51b7ec73d1757f783a378e5821648f0357a"
 dependencies = [
  "cfg-if",
  "mem_dbg",
@@ -659,8 +660,9 @@ dependencies = [
 
 [[package]]
 name = "seq-hash"
-version = "0.1.0"
-source = "git+https://github.com/rust-seq/seq-hash#271e26efc53405fce3613a59eb9910e54ff18fe7"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "223c0987220362a4373b52ab3ffb9bbc7e3e6bcabf9460804e4cc443ff727976"
 dependencies = [
  "packed-seq",
  "wide",
