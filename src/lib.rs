@@ -1,4 +1,4 @@
-#![feature(hash_set_entry)]
+#![feature(hash_set_entry, array_windows)]
 //! # SimdSketch
 //!
 //! This library provides two types of sequence sketches:
@@ -137,12 +137,13 @@
 mod intrinsics;
 
 use std::{
-    collections::{HashSet, hash_set::Entry},
+    collections::{hash_set::Entry, HashMap, HashSet},
     sync::atomic::{AtomicU64, Ordering::Relaxed},
 };
 
+use itertools::Itertools;
 use log::debug;
-use packed_seq::{ChunkIt, PackedNSeq, PaddedIt, Seq, u32x8};
+use packed_seq::{u32x8, ChunkIt, PackedNSeq, PaddedIt, Seq};
 use seq_hash::KmerHasher;
 
 /// Use the classic rotate-by-1 for backwards compatibility.
@@ -541,15 +542,27 @@ impl Sketcher {
             if bound == u32::MAX || out.len() >= self.params.s {
                 out.sort_unstable();
                 let old_len = out.len();
-                out.dedup();
-                let new_len = out.len();
+                let new_len = 1 + out
+                    .array_windows()
+                    .map(|[l, r]| (l != r) as usize)
+                    .sum::<usize>();
+
                 debug!("Deduplicated from {old_len} to {new_len}");
                 if bound == u32::MAX || out.len() >= self.params.s {
+                    out.dedup();
                     out.resize(self.params.s, u32::MAX);
+
+                    let mut counts = vec![];
+                    for g in out.iter().chunk_by(|x| **x).into_iter() {
+                        counts.push(g.1.count() as u16);
+                    }
+
+                    self.stats(n, &out, counts);
 
                     return BottomSketch {
                         rc: self.params.rc,
                         k: self.params.k,
+                        seed: self.params.seed,
                         duplicate: self.params.duplicate,
                         bottom: out,
                     };
@@ -599,18 +612,26 @@ impl Sketcher {
 
                 self.collect_up_to_bound(seqs, bound, out);
 
-                let mut empty = 0;
+                let mut num_empty = 0;
                 if bound == u32::MAX || out.len() >= self.params.s {
                     let m = FM32::new(self.params.s as u32);
 
                     let mut seen = HashSet::with_capacity(4 * self.params.s);
 
+                    let mut counts = vec![0u16; self.params.s];
                     if !self.params.duplicate {
                         for &hash in &*out {
                             let bucket = m.fastmod(hash);
                             debug_assert!(bucket < buckets.len());
                             let min = unsafe { buckets.get_unchecked_mut(bucket) };
-                            *min = (*min).min(hash);
+                            if hash < *min {
+                                *min = hash;
+                                unsafe { *counts.get_unchecked_mut(bucket) = 1 };
+                            }
+                            else if hash == *min {
+                                unsafe { *counts.get_unchecked_mut(bucket) += 1 };
+                            }
+                            // *min = (*min).min(hash);
                         }
                     } else {
                         for &hash in &*out {
@@ -618,7 +639,11 @@ impl Sketcher {
                             debug_assert!(bucket < buckets.len());
                             let min = unsafe { buckets.get_unchecked_mut(bucket) };
 
-                            if hash >= *min {
+                            if hash > *min {
+                                continue;
+                            }
+                            if hash == *min {
+                                unsafe { *counts.get_unchecked_mut(bucket) += 1 };
                                 continue;
                             }
 
@@ -629,26 +654,27 @@ impl Sketcher {
                                 Entry::Occupied(e) => {
                                     e.remove();
                                     *min = hash;
+                                    unsafe { *counts.get_unchecked_mut(bucket) = 2};
                                 }
                             }
                         }
-                        debug!(
-                            "Hashset size: {} ({:>5.2}%)",
-                            seen.len(),
-                            seen.len() as f32 / out.len() as f32 * 100.0
-                        );
+                        // debug!(
+                        //     "Hashset size: {} ({:>5.2}%)",
+                        //     seen.len(),
+                        //     seen.len() as f32 / out.len() as f32 * 100.0
+                        // );
                     }
                     for &x in &*buckets {
                         if x == u32::MAX {
-                            empty += 1;
+                            num_empty += 1;
                         }
                     }
-                    if bound == u32::MAX || empty == 0 {
-                        if empty > 0 {
-                            debug!("Found {empty} empty buckets.");
+                    if bound == u32::MAX || num_empty == 0 {
+                        if num_empty > 0 {
+                            debug!("Found {num_empty} empty buckets.");
                         }
-                        let empty = if empty > 0 && self.params.filter_empty {
-                            debug!("Found {empty} empty buckets. Storing bitmask.");
+                        let empty = if num_empty > 0 && self.params.filter_empty {
+                            debug!("Found {num_empty} empty buckets. Storing bitmask.");
                             buckets
                                 .chunks(64)
                                 .map(|xs| {
@@ -660,6 +686,10 @@ impl Sketcher {
                         } else {
                             vec![]
                         };
+
+                        self.stats(n, buckets, counts);
+
+
 
                         // Reduce buckets mod m.
                         buckets.iter_mut().for_each(|x| *x =  m.fastdiv(*x) as u32);
@@ -681,13 +711,84 @@ impl Sketcher {
                 let new_factor = factor + factor.div_ceil(4);
                 let prev = self.factor.fetch_max(new_factor, Relaxed);
                 debug!(
-                    "Found only {:>10} of {:>10} ({:>6.3}%, {empty:>5} empty) Increasing factor from {factor} to {new_factor} (was already {prev})",
+                    "Found only {:>10} of {:>10} ({:>6.3}%, {num_empty:>5} empty) Increasing factor from {factor} to {new_factor} (was already {prev})",
                     out.len(),
                     self.params.s,
                     out.len() as f32 / self.params.s as f32 * 100.,
                 );
             }
         })
+    }
+
+    fn stats(&self, num_kmers: usize, hashes: &Vec<u32>, counts: Vec<u16>) {
+        let num_empty = hashes
+            .iter()
+            .map(|x| (*x == u32::MAX) as usize)
+            .sum::<usize>();
+        // Statistics
+        let mut cc = HashMap::new();
+        for c in counts {
+            *cc.entry(c).or_insert(0) += 1;
+        }
+        let mut cc = cc.into_iter().collect::<Vec<_>>();
+        cc.sort_unstable();
+        debug!("Counts: {:?}", cc);
+
+        // for bottom sketch:
+        // - the i'th smallest value is roughly i * MAX/(n+1).
+        // - averaging over i in 1..=s => * (1+s)/2.
+        let expected_hash =
+            u32::MAX as f64 / (num_kmers as f64 + 1.0) * (1.0 + self.params.s as f64) / 2.0;
+        let average_hash = hashes
+            .iter()
+            .filter(|x| **x != u32::MAX)
+            .map(|x| *x as f64)
+            .sum::<f64>()
+            / (self.params.s - num_empty) as f64;
+        let harmonic_hash = (self.params.s - num_empty) as f64
+            / hashes
+                .iter()
+                .filter(|x| **x != u32::MAX)
+                .map(|x| 1.0 / (*x as f64 + 1.0))
+                .sum::<f64>();
+        let harmonic2_hash = self.params.s as f64 * (self.params.s - num_empty) as f64
+            / hashes
+                .iter()
+                .filter(|x| **x != u32::MAX)
+                .map(|x| 1.0 / ((*x / self.params.s as u32) as f64 + 1.0))
+                .sum::<f64>();
+        let median_hash = {
+            let mut xs = hashes
+                .iter()
+                .filter(|x| **x != u32::MAX)
+                .copied()
+                .collect::<Vec<_>>();
+            xs.sort_unstable();
+            debug!("Hashes {xs:?}");
+            xs[xs.len() / 2] as f64
+        };
+        debug!("Expected  hash {expected_hash:>11.2}");
+        debug!("Average   hash {average_hash:>11.2}");
+        debug!("Harmonic  hash {harmonic_hash:>11.2}");
+        debug!("Harmonic2 hash {harmonic2_hash:>11.2}");
+        debug!("Median    hash {median_hash:>11.2}");
+        debug!("Average ratio   {:>7.4}", average_hash / expected_hash);
+        debug!("Harmonic ratio  {:>7.4}", harmonic_hash / expected_hash);
+        debug!("Harmonic2 ratio {:>7.4}", harmonic2_hash / expected_hash);
+        debug!("Median ratio    {:>7.4}", median_hash / expected_hash);
+        let average_kmers = u32::MAX as f64 / average_hash;
+        let harmonic_kmers = u32::MAX as f64 / harmonic_hash;
+        let harmonic2_kmers = u32::MAX as f64 / harmonic2_hash;
+        let median_kmers = u32::MAX as f64 / median_hash;
+        let real_kmers = num_kmers as f64 / self.params.s as f64;
+        let average_coverage = real_kmers / average_kmers;
+        let harmonic_coverage = real_kmers / harmonic_kmers;
+        let harmonic2_coverage = real_kmers / harmonic2_kmers;
+        let median_coverage = real_kmers / median_kmers;
+        debug!("Average coverage   {average_coverage:>7.4}");
+        debug!("Harmonic coverage  {harmonic_coverage:>7.4}");
+        debug!("Harmonic2 coverage {harmonic2_coverage:>7.4}");
+        debug!("Median coverage    {median_coverage:>7.4}");
     }
 
     fn collect_up_to_bound<'s>(&self, seqs: &[impl Sketchable], bound: u32, out: &mut Vec<u32>) {
