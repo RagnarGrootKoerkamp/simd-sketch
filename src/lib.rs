@@ -376,6 +376,7 @@ impl BucketSketch {
 #[derive(clap::ValueEnum, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SketchAlg {
     Bottom,
+    Bottom2,
     Bucket,
 }
 
@@ -438,7 +439,7 @@ impl SketchParams {
         // factor is pre-multiplied by 10 for a bit more fine-grained resolution.
         let factor;
         match params.alg {
-            SketchAlg::Bottom => {
+            SketchAlg::Bottom | SketchAlg::Bottom2 => {
                 // Clear out redundant value.
                 params.b = 0;
                 factor = 13; // 1.3 * 10
@@ -509,6 +510,7 @@ impl Sketcher {
     pub fn sketch_seqs<'s>(&self, seqs: &[impl Sketchable]) -> Sketch {
         match self.params.alg {
             SketchAlg::Bottom => Sketch::BottomSketch(self.bottom_sketch(seqs)),
+            SketchAlg::Bottom2 => Sketch::BottomSketch(self.bottom_sketch_2(seqs)),
             SketchAlg::Bucket => Sketch::BucketSketch(self.bucket_sketch(seqs)),
         }
     }
@@ -520,8 +522,6 @@ impl Sketcher {
     }
 
     /// Return the `s` smallest `u32` k-mer hashes.
-    /// Prefer [`Sketcher::sketch`] instead, which is much faster and just as
-    /// accurate when input sequences are not too short.
     fn bottom_sketch<'s>(&self, seqs: &[impl Sketchable]) -> BottomSketch {
         // Iterate all kmers and compute 32bit nthashes.
         let n = self.num_kmers(seqs);
@@ -533,7 +533,7 @@ impl Sketcher {
             let factor = self.factor.load(Relaxed);
             let bound = (target as u128 * factor as u128 / 10 as u128).min(u32::MAX as u128) as u32;
 
-            self.collect_up_to_bound(seqs, bound, &mut out);
+            self.collect_up_to_bound(seqs, bound, &mut out, usize::MAX, |_| unreachable!());
 
             if self.params.duplicate {
                 panic!("Bottom-sketching only duplicate kmers is not implemented yet.");
@@ -552,12 +552,14 @@ impl Sketcher {
                     out.dedup();
                     out.resize(self.params.s, u32::MAX);
 
-                    let mut counts = vec![];
-                    for g in out.iter().chunk_by(|x| **x).into_iter() {
-                        counts.push(g.1.count() as u16);
-                    }
+                    if log::log_enabled!(log::Level::Debug) {
+                        let mut counts = vec![];
+                        for g in out.iter().chunk_by(|x| **x).into_iter() {
+                            counts.push(g.1.count() as u16);
+                        }
 
-                    self.stats(n, &out, counts);
+                        self.stats(n, &out, counts);
+                    }
 
                     return BottomSketch {
                         rc: self.params.rc,
@@ -578,6 +580,54 @@ impl Sketcher {
                 out.len() as f32 / self.params.s as f32,
             );
         }
+    }
+
+    /// Return the `s` smallest `u32` k-mer hashes.
+    fn bottom_sketch_2<'s>(&self, seqs: &[impl Sketchable]) -> BottomSketch {
+        // Iterate all kmers and compute 32bit nthashes.
+        let n = self.num_kmers(seqs);
+        let mut out = vec![];
+
+        if self.params.duplicate {
+            panic!("Bottom-sketching only duplicate kmers is not implemented yet.");
+        }
+
+        self.collect_up_to_bound(seqs, u32::MAX, &mut out, 2 * self.params.s, |out| {
+            // TODO: Can this be made more efficient?
+            let l0 = out.len();
+            out.sort_unstable();
+            out.dedup();
+            let l1 = out.len();
+            out.truncate(self.params.s);
+            let l2 = out.len();
+            let bound = out.get(self.params.s - 1).copied().unwrap_or(u32::MAX);
+            debug!("Len before {l0} => dedup {l1} => truncate {l2}. New bound {bound}");
+            bound
+        });
+
+        let l0 = out.len();
+        out.sort_unstable();
+        out.dedup();
+        let l1 = out.len();
+        debug!("Len before {l0} => after {l1}.");
+        out.resize(self.params.s, u32::MAX);
+
+        if log::log_enabled!(log::Level::Debug) {
+            let mut counts = vec![];
+            for g in out.iter().chunk_by(|x| **x).into_iter() {
+                counts.push(g.1.count() as u16);
+            }
+
+            self.stats(n, &out, counts);
+        }
+
+        return BottomSketch {
+            rc: self.params.rc,
+            k: self.params.k,
+            seed: self.params.seed,
+            duplicate: self.params.duplicate,
+            bottom: out,
+        };
     }
 
     /// s-buckets sketch. Splits the hashes into `s` buckets and returns the smallest hash per bucket.
@@ -610,7 +660,7 @@ impl Sketcher {
                     bound as f32 / u32::MAX as f32 * 100.0,
                 );
 
-                self.collect_up_to_bound(seqs, bound, out);
+                self.collect_up_to_bound(seqs, bound, out, usize::MAX, |_| unreachable!());
 
                 let mut num_empty = 0;
                 if bound == u32::MAX || out.len() >= self.params.s {
@@ -791,17 +841,27 @@ impl Sketcher {
         debug!("Median coverage    {median_coverage:>7.4}");
     }
 
-    fn collect_up_to_bound<'s>(&self, seqs: &[impl Sketchable], bound: u32, out: &mut Vec<u32>) {
+    /// Collect all values `<= bound`.
+    #[inline(always)]
+    fn collect_up_to_bound<'s>(
+        &self,
+        seqs: &[impl Sketchable],
+        mut bound: u32,
+        out: &mut Vec<u32>,
+        max_len: usize,
+        mut callback: impl FnMut(&mut Vec<u32>) -> u32,
+    ) {
         out.clear();
+        let it = &mut 0;
         if self.params.rc {
             for &seq in seqs {
                 let hashes = seq.hash_kmers(&self.rc_hasher);
-                collect_impl(bound, hashes, out);
+                collect_impl(&mut bound, hashes, out, max_len, &mut callback, it);
             }
         } else {
             for &seq in seqs {
                 let hashes = seq.hash_kmers(&self.fwd_hasher);
-                collect_impl(bound, hashes, out);
+                collect_impl(&mut bound, hashes, out, max_len, &mut callback, it);
             }
         }
         debug!(
@@ -812,14 +872,27 @@ impl Sketcher {
     }
 }
 
-fn collect_impl(bound: u32, hashes: PaddedIt<impl ChunkIt<u32x8>>, out: &mut Vec<u32>) {
-    let simd_bound = u32x8::splat(bound);
+/// Collect values <= bound.
+///
+/// Once `out` reaches `max_len`, `callback` will be called to update the bound.
+#[inline(always)]
+fn collect_impl(
+    bound: &mut u32,
+    hashes: PaddedIt<impl ChunkIt<u32x8>>,
+    out: &mut Vec<u32>,
+    max_len: usize,
+    callback: &mut impl FnMut(&mut Vec<u32>) -> u32,
+    it: &mut usize,
+) {
+    let mut simd_bound = u32x8::splat(*bound);
     let mut write_idx = out.len();
     let lane_len = hashes.it.len();
     let mut idx = u32x8::from(std::array::from_fn(|i| (i * lane_len) as u32));
     let max_idx = (8 * lane_len - hashes.padding) as u32;
     let max_idx = u32x8::splat(max_idx);
     hashes.it.for_each(|hashes| {
+        // hashes <= simd_bound
+        // let mask = !simd_bound.cmp_gt(hashes);
         let mask = hashes.cmp_lt(simd_bound);
         let in_bounds = idx.cmp_lt(max_idx);
         if write_idx + 8 > out.capacity() {
@@ -827,6 +900,14 @@ fn collect_impl(bound: u32, hashes: PaddedIt<impl ChunkIt<u32x8>>, out: &mut Vec
         }
         unsafe { intrinsics::append_from_mask(hashes, mask & in_bounds, out, &mut write_idx) };
         idx += u32x8::ONE;
+        if write_idx >= max_len as usize {
+            debug!("CALLBACK in iteration {it} old bound {bound}");
+            unsafe { out.set_len(write_idx) };
+            *bound = callback(out);
+            simd_bound = u32x8::splat(*bound);
+            write_idx = out.len();
+        }
+        *it += 1;
     });
 
     unsafe { out.set_len(write_idx) };
@@ -1060,8 +1141,15 @@ mod test {
         let n = black_box(8000);
         let it = (0..n).map(|x| u32x8::splat((x as u32).wrapping_mul(546786567)));
         let padded_it = PaddedIt { it, padding: 0 };
-        let bound = black_box(u32::MAX / 10);
-        collect_impl(bound, padded_it, &mut out);
+        let mut bound = black_box(u32::MAX / 10);
+        collect_impl(
+            &mut bound,
+            padded_it,
+            &mut out,
+            usize::MAX,
+            &mut |_| unreachable!(),
+            &mut 0,
+        );
         eprintln!("{out:?}");
     }
 }
