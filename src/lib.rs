@@ -648,6 +648,7 @@ impl Sketcher {
         let out = new_collect(
             self.params.s,
             self.params.count,
+            self.params.coverage,
             seqs.iter().map(|seq| seq.hash_kmers(&self.rc_hasher)),
         );
 
@@ -958,9 +959,11 @@ fn collect_impl(
 fn new_collect(
     s: usize,
     cnt: usize,
+    coverage: usize,
     hashes: impl Iterator<Item = PaddedIt<impl ChunkIt<u32x8>>>,
 ) -> Vec<u32> {
-    let mut bound = u32x8::splat(u32::MAX);
+    let initial_bound = u32::MAX / coverage as u32;
+    let mut bound = u32x8::splat(initial_bound);
 
     // 1. Collect values <= bound.
     let mut buf = vec![];
@@ -972,14 +975,12 @@ fn new_collect(
 
     // 3. Priority queue with smallest s elements with sufficient count.
     // Largest at the top, so they can be removed easily.
-    let mut pq = BinaryHeap::<u32>::from_iter((0..s).map(|_| u32::MAX));
+    let mut pq = BinaryHeap::<u32>::from_iter((0..s).map(|_| initial_bound));
 
-    let mut process_batch = |buf: &mut Vec<u32>, write_idx: &mut usize| {
+    let mut start = std::time::Instant::now();
+
+    let mut process_batch = |buf: &mut Vec<u32>, write_idx: &mut usize, i: usize| {
         let mut top = *pq.peek().unwrap();
-        info!(
-            "Batch of size {write_idx:>10}. Top: {top:>10} = {:5.3}%",
-            top as f32 / u32::MAX as f32 * 100.0
-        );
         unsafe { buf.set_len(*write_idx) };
         for &hash in &*buf {
             if hash < top {
@@ -992,13 +993,21 @@ fn new_collect(
                 }
             }
         }
-        info!("New top {top:>10}");
+        let now = std::time::Instant::now();
+        let duration = now.duration_since(start);
+        start = now;
+        info!(
+            "Batch of size {write_idx:>10} after {i:>10} kmers. Top: {top:>10} = {:5.1}% hashmap size {:>9} took {duration:?}",
+            top as f32 / u32::MAX as f32 * 100.0,
+            counts.len()
+        );
         buf.clear();
 
         *write_idx = 0;
         u32x8::splat(top)
     };
 
+    let mut i = 0;
     for hashes in hashes {
         // Prevent saving out-of-bound kmers.
         let lane_len = hashes.it.len();
@@ -1006,6 +1015,7 @@ fn new_collect(
         let max_idx = u32x8::splat((8 * lane_len - hashes.padding) as u32);
 
         hashes.it.for_each(|hashes| {
+            i += 8;
             // hashes <= simd_bound
             // let mask = !simd_bound.cmp_gt(hashes);
             let mask = hashes.cmp_lt(bound);
@@ -1020,11 +1030,12 @@ fn new_collect(
             };
             idx += u32x8::ONE;
             if write_idx >= batch_size as usize {
-                bound = process_batch(&mut buf, &mut write_idx);
+                bound = process_batch(&mut buf, &mut write_idx, i);
+                i = 0;
             }
         });
     }
-    process_batch(&mut buf, &mut write_idx);
+    process_batch(&mut buf, &mut write_idx, i);
 
     pq.into_vec()
 }
