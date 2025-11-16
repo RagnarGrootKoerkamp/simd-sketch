@@ -12,12 +12,12 @@ description = "A SIMD-accelerated library to compute a b-bit bottom-h sketch"
 [profile.release]
 opt-level = 3
 panic = "abort"
-strip = true
-debug = false
+# strip = true
+debug = true
 incremental = true
 # slow!
 lto = true
-codegen-units = 1
+# codegen-units = 1
 
 [profile.dev]
 opt-level = 3

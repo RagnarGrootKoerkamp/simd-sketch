@@ -137,12 +137,12 @@
 mod intrinsics;
 
 use std::{
-    collections::{hash_set::Entry, HashMap, HashSet},
+    collections::{hash_set::Entry, BinaryHeap, HashMap, HashSet},
     sync::atomic::{AtomicU64, Ordering::Relaxed},
 };
 
 use itertools::Itertools;
-use log::debug;
+use log::{debug, info};
 use packed_seq::{u32x8, ChunkIt, PackedNSeq, PaddedIt, Seq};
 use seq_hash::KmerHasher;
 
@@ -185,6 +185,7 @@ impl Sketch {
                 b: 0,
                 seed: 0,
                 duplicate: sketch.duplicate,
+                count: sketch.count,
                 coverage: 1,
                 filter_empty: false,
                 filter_out_n: false, // FIXME
@@ -197,6 +198,7 @@ impl Sketch {
                 b: sketch.b,
                 seed: 0,
                 duplicate: sketch.duplicate,
+                count: sketch.count,
                 coverage: 1,
                 filter_empty: false,
                 filter_out_n: false, // FIXME
@@ -266,6 +268,7 @@ pub struct BottomSketch {
     pub k: usize,
     pub seed: u32,
     pub duplicate: bool,
+    pub count: usize,
     pub bottom: Vec<u32>,
 }
 
@@ -307,6 +310,7 @@ pub struct BucketSketch {
     pub b: usize,
     pub seed: u32,
     pub duplicate: bool,
+    pub count: usize,
     pub buckets: BitSketch,
     /// Bit-vector indicating empty buckets, so the similarity score can be adjusted accordingly.
     pub empty: Vec<u64>,
@@ -377,6 +381,7 @@ impl BucketSketch {
 pub enum SketchAlg {
     Bottom,
     Bottom2,
+    Bottom3,
     Bucket,
 }
 
@@ -411,6 +416,9 @@ pub struct SketchParams {
     /// Sketch only duplicate (non-unique) kmers.
     #[arg(long)]
     pub duplicate: bool,
+    /// Sketch only kmers with at least this count.
+    #[arg(long)]
+    pub count: usize,
     /// When sketching read sets of coverage >1, set this for a better initial estimate for the threshold on kmer hashes.
     #[arg(short, long, default_value_t = 1)]
     pub coverage: usize,
@@ -439,7 +447,7 @@ impl SketchParams {
         // factor is pre-multiplied by 10 for a bit more fine-grained resolution.
         let factor;
         match params.alg {
-            SketchAlg::Bottom | SketchAlg::Bottom2 => {
+            SketchAlg::Bottom | SketchAlg::Bottom2 | SketchAlg::Bottom3 => {
                 // Clear out redundant value.
                 params.b = 0;
                 factor = 13; // 1.3 * 10
@@ -472,6 +480,7 @@ impl SketchParams {
             b: 1,
             seed: 0,
             duplicate: false,
+            count: 0,
             coverage: 1,
             filter_empty: true,
             filter_out_n: false,
@@ -489,6 +498,7 @@ impl SketchParams {
             b: 8,
             seed: 0,
             duplicate: false,
+            count: 0,
             coverage: 1,
             filter_empty: false,
             filter_out_n: false,
@@ -511,6 +521,7 @@ impl Sketcher {
         match self.params.alg {
             SketchAlg::Bottom => Sketch::BottomSketch(self.bottom_sketch(seqs)),
             SketchAlg::Bottom2 => Sketch::BottomSketch(self.bottom_sketch_2(seqs)),
+            SketchAlg::Bottom3 => Sketch::BottomSketch(self.bottom_sketch_3(seqs)),
             SketchAlg::Bucket => Sketch::BucketSketch(self.bucket_sketch(seqs)),
         }
     }
@@ -566,6 +577,7 @@ impl Sketcher {
                         k: self.params.k,
                         seed: self.params.seed,
                         duplicate: self.params.duplicate,
+                        count: self.params.count,
                         bottom: out,
                     };
                 }
@@ -626,6 +638,25 @@ impl Sketcher {
             k: self.params.k,
             seed: self.params.seed,
             duplicate: self.params.duplicate,
+            count: self.params.count,
+            bottom: out,
+        };
+    }
+
+    /// Return the `s` smallest `u32` k-mer hashes.
+    fn bottom_sketch_3<'s>(&self, seqs: &[impl Sketchable]) -> BottomSketch {
+        let out = new_collect(
+            self.params.s,
+            self.params.count,
+            seqs.iter().map(|seq| seq.hash_kmers(&self.rc_hasher)),
+        );
+
+        return BottomSketch {
+            rc: self.params.rc,
+            k: self.params.k,
+            seed: self.params.seed,
+            duplicate: self.params.duplicate,
+            count: self.params.count,
             bottom: out,
         };
     }
@@ -749,6 +780,7 @@ impl Sketcher {
                             b: self.params.b,
                             seed: self.params.seed,
                             duplicate: self.params.duplicate,
+                            count: self.params.count,
                             empty,
                             buckets: BitSketch::new(
                                 self.params.b,
@@ -814,7 +846,7 @@ impl Sketcher {
                 .copied()
                 .collect::<Vec<_>>();
             xs.sort_unstable();
-            debug!("Hashes {xs:?}");
+            // debug!("Hashes {xs:?}");
             xs[xs.len() / 2] as f64
         };
         debug!("Expected  hash {expected_hash:>11.2}");
@@ -848,7 +880,7 @@ impl Sketcher {
         seqs: &[impl Sketchable],
         mut bound: u32,
         out: &mut Vec<u32>,
-        max_len: usize,
+        batch_size: usize,
         mut callback: impl FnMut(&mut Vec<u32>) -> u32,
     ) {
         out.clear();
@@ -856,12 +888,12 @@ impl Sketcher {
         if self.params.rc {
             for &seq in seqs {
                 let hashes = seq.hash_kmers(&self.rc_hasher);
-                collect_impl(&mut bound, hashes, out, max_len, &mut callback, it);
+                collect_impl(&mut bound, hashes, out, batch_size, &mut callback, it);
             }
         } else {
             for &seq in seqs {
                 let hashes = seq.hash_kmers(&self.fwd_hasher);
-                collect_impl(&mut bound, hashes, out, max_len, &mut callback, it);
+                collect_impl(&mut bound, hashes, out, batch_size, &mut callback, it);
             }
         }
         debug!(
@@ -880,7 +912,7 @@ fn collect_impl(
     bound: &mut u32,
     hashes: PaddedIt<impl ChunkIt<u32x8>>,
     out: &mut Vec<u32>,
-    max_len: usize,
+    batch_size: usize,
     callback: &mut impl FnMut(&mut Vec<u32>) -> u32,
     it: &mut usize,
 ) {
@@ -894,13 +926,14 @@ fn collect_impl(
         // hashes <= simd_bound
         // let mask = !simd_bound.cmp_gt(hashes);
         let mask = hashes.cmp_lt(simd_bound);
+        // TODO: transform to a decreasing loop with >= 0 check.
         let in_bounds = idx.cmp_lt(max_idx);
         if write_idx + 8 > out.capacity() {
             out.reserve(out.capacity() + 8);
         }
         unsafe { intrinsics::append_from_mask(hashes, mask & in_bounds, out, &mut write_idx) };
         idx += u32x8::ONE;
-        if write_idx >= max_len as usize {
+        if write_idx >= batch_size as usize {
             debug!("CALLBACK in iteration {it} old bound {bound}");
             unsafe { out.set_len(write_idx) };
             *bound = callback(out);
@@ -911,6 +944,89 @@ fn collect_impl(
     });
 
     unsafe { out.set_len(write_idx) };
+}
+
+/// Collect the `s` smallest values that occur at least `cnt` times.
+///
+/// Implementation:
+/// 1. Keep a bound, and collect batch of ~`s` kmers below `bound`.
+/// 2. Increase counts in a hashmap for all kmers in the batch.
+/// 3. Kmers with the required count are added to a priority queue, and the current `bound` is updated.
+///    - Should we collect these in batches too?
+/// 4. (From time to time, the hashmap with counts is pruned.)
+#[inline(always)]
+fn new_collect(
+    s: usize,
+    cnt: usize,
+    hashes: impl Iterator<Item = PaddedIt<impl ChunkIt<u32x8>>>,
+) -> Vec<u32> {
+    let mut bound = u32x8::splat(u32::MAX);
+
+    // 1. Collect values <= bound.
+    let mut buf = vec![];
+    let mut write_idx = buf.len();
+    let batch_size = s;
+
+    // 2. HashMap with counts.
+    let mut counts = HashMap::<u32, usize>::new();
+
+    // 3. Priority queue with smallest s elements with sufficient count.
+    // Largest at the top, so they can be removed easily.
+    let mut pq = BinaryHeap::<u32>::from_iter((0..s).map(|_| u32::MAX));
+
+    let mut process_batch = |buf: &mut Vec<u32>, write_idx: &mut usize| {
+        let mut top = *pq.peek().unwrap();
+        info!(
+            "Batch of size {write_idx:>10}. Top: {top:>10} = {:5.3}%",
+            top as f32 / u32::MAX as f32 * 100.0
+        );
+        unsafe { buf.set_len(*write_idx) };
+        for &hash in &*buf {
+            if hash < top {
+                *counts.entry(hash).or_insert(0) += 1;
+                if counts[&hash] == cnt {
+                    pq.pop();
+                    pq.push(hash);
+                    top = *pq.peek().unwrap();
+                    // info!("Push {hash:>10}; new top {top:>10}");
+                }
+            }
+        }
+        info!("New top {top:>10}");
+        buf.clear();
+
+        *write_idx = 0;
+        u32x8::splat(top)
+    };
+
+    for hashes in hashes {
+        // Prevent saving out-of-bound kmers.
+        let lane_len = hashes.it.len();
+        let mut idx = u32x8::from(std::array::from_fn(|i| (i * lane_len) as u32));
+        let max_idx = u32x8::splat((8 * lane_len - hashes.padding) as u32);
+
+        hashes.it.for_each(|hashes| {
+            // hashes <= simd_bound
+            // let mask = !simd_bound.cmp_gt(hashes);
+            let mask = hashes.cmp_lt(bound);
+            // TODO: transform to a decreasing loop with >= 0 check.
+            let in_bounds = idx.cmp_lt(max_idx);
+            if write_idx + 8 > buf.capacity() {
+                buf.reserve(buf.capacity() + 8);
+            }
+            // Note that this does not increase the length of `out`.
+            unsafe {
+                intrinsics::append_from_mask(hashes, mask & in_bounds, &mut buf, &mut write_idx)
+            };
+            idx += u32x8::ONE;
+            if write_idx >= batch_size as usize {
+                bound = process_batch(&mut buf, &mut write_idx);
+            }
+        });
+    }
+    process_batch(&mut buf, &mut write_idx);
+
+    pq.into_vec()
 }
 
 pub trait Sketchable: Copy {
@@ -1003,6 +1119,7 @@ mod test {
                     b,
                     seed: 0,
                     duplicate: false,
+                    count: 0,
                     coverage: 1,
                     filter_empty: false,
                     filter_out_n: true,
@@ -1022,6 +1139,7 @@ mod test {
                     b,
                     seed: 0,
                     duplicate: false,
+                    count: 0,
                     coverage: 1,
                     filter_empty: false,
                     filter_out_n: true,
@@ -1050,6 +1168,7 @@ mod test {
                             b,
                             seed: 0,
                             duplicate: false,
+                            count: 0,
                             coverage: 1,
                             filter_empty: false,
                             filter_out_n: true,
@@ -1090,6 +1209,7 @@ mod test {
                 b,
                 seed: 0,
                 duplicate: false,
+                count: 0,
                 coverage: 1,
                 filter_empty,
                 filter_out_n: false,
@@ -1122,6 +1242,7 @@ mod test {
                         b,
                         seed: 0,
                         duplicate: false,
+                        count: 0,
                         coverage: 1,
                         filter_empty,
                         filter_out_n: false,
