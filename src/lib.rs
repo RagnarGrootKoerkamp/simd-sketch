@@ -548,7 +548,7 @@ impl Sketcher {
                     .sum::<usize>();
 
                 debug!("Deduplicated from {old_len} to {new_len}");
-                if bound == u32::MAX || out.len() >= self.params.s {
+                if bound == u32::MAX || new_len >= self.params.s {
                     out.dedup();
                     out.resize(self.params.s, u32::MAX);
 
