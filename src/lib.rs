@@ -972,38 +972,84 @@ fn new_collect(
 
     // 2. HashMap with counts.
     let mut counts = HashMap::<u32, usize>::new();
+    let mut counts = Vec::<(u32, u32)>::new();
+    let mut counts_cache = vec![];
 
     // 3. Priority queue with smallest s elements with sufficient count.
     // Largest at the top, so they can be removed easily.
-    let mut pq = BinaryHeap::<u32>::from_iter((0..s).map(|_| initial_bound));
+    // let mut pq = BinaryHeap::<u32>::from_iter((0..s).map(|_| initial_bound));
 
     let mut start = std::time::Instant::now();
 
     let mut process_batch = |buf: &mut Vec<u32>, write_idx: &mut usize, i: usize| {
-        let mut top = *pq.peek().unwrap();
         unsafe { buf.set_len(*write_idx) };
-        for &hash in &*buf {
-            if hash < top {
-                *counts.entry(hash).or_insert(0) += 1;
-                if counts[&hash] == cnt {
-                    pq.pop();
-                    pq.push(hash);
-                    top = *pq.peek().unwrap();
-                    // info!("Push {hash:>10}; new top {top:>10}");
+        buf.sort_unstable();
+
+        // merge-sort buf into counts.
+        std::mem::swap(&mut counts_cache, &mut counts);
+        counts.clear();
+        let mut bi = 0;
+        let mut ci = 0;
+        let mut num_large = 0;
+        let mut top = 0;
+        while num_large < s && (bi < buf.len() || ci < counts_cache.len()) {
+            if bi < buf.len() && (ci >= counts_cache.len() || buf[bi] < counts_cache[ci].0) {
+                // new element from buf
+                let hash = buf[bi];
+                let mut count = 1u32;
+                bi += 1;
+                while bi < buf.len() && buf[bi] == hash {
+                    count += 1;
+                    bi += 1;
                 }
+                counts.push((hash, count));
+            } else if ci < counts_cache.len() && (bi >= buf.len() || counts_cache[ci].0 < buf[bi]) {
+                counts.push(counts_cache[ci]);
+                ci += 1;
+            } else {
+                // equal
+                let hash = buf[bi];
+                let mut count = counts_cache[ci].1;
+                bi += 1;
+                ci += 1;
+                while bi < buf.len() && buf[bi] == hash {
+                    count += 1;
+                    bi += 1;
+                }
+                counts.push((hash, count));
+            }
+            if counts.last().unwrap().1 >= cnt as u32 {
+                top = counts.last().unwrap().0;
+                num_large += 1;
             }
         }
+        if num_large < s {
+            top = initial_bound;
+        }
+        counts_cache.clear();
+        buf.clear();
+
+        // for &hash in &*buf {
+        //     if hash < top {
+        //         *counts.entry(hash).or_insert(0) += 1;
+        //         if counts[&hash] == cnt {
+        //             pq.pop();
+        //             pq.push(hash);
+        //             top = *pq.peek().unwrap();
+        //             // info!("Push {hash:>10}; new top {top:>10}");
+        //         }
+        //     }
+        // }
         let now = std::time::Instant::now();
         let duration = now.duration_since(start);
         start = now;
         info!(
-            "Batch of size {write_idx:>10} after {i:>10} kmers. Top: {top:>10} = {:5.1}% hashmap size {:>9} took {duration:?}",
+            "Batch of size {write_idx:>10} after {i:>10} kmers. Top: {top:>10} = {:5.1}% counts size {:>9} took {duration:?}",
             top as f32 / u32::MAX as f32 * 100.0,
             counts.len()
         );
-        buf.clear();
-
         *write_idx = 0;
+
         u32x8::splat(top)
     };
 
@@ -1037,7 +1083,12 @@ fn new_collect(
     }
     process_batch(&mut buf, &mut write_idx, i);
 
-    pq.into_vec()
+    // pq.into_vec()
+    counts
+        .iter()
+        .filter(|&(_hash, count)| *count >= cnt as u32)
+        .map(|(hash, _count)| *hash)
+        .collect()
 }
 
 pub trait Sketchable: Copy {
