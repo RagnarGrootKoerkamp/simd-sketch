@@ -137,7 +137,7 @@
 mod intrinsics;
 
 use std::{
-    collections::{hash_set::Entry, BinaryHeap, HashMap, HashSet},
+    collections::{hash_set::Entry, BTreeMap, BinaryHeap, HashMap, HashSet},
     sync::atomic::{AtomicU64, Ordering::Relaxed},
 };
 
@@ -971,9 +971,10 @@ fn new_collect(
     let batch_size = s;
 
     // 2. HashMap with counts.
-    let mut counts = HashMap::<u32, usize>::new();
-    let mut counts = Vec::<(u32, u32)>::new();
-    let mut counts_cache = vec![];
+    // let mut counts = HashMap::<u32, usize>::new();
+    // let mut counts = Vec::<(u32, u32)>::new();
+    // let mut counts_cache = vec![];
+    let mut counts = BTreeMap::<u32, u32>::new();
 
     // 3. Priority queue with smallest s elements with sufficient count.
     // Largest at the top, so they can be removed easily.
@@ -985,48 +986,21 @@ fn new_collect(
         unsafe { buf.set_len(*write_idx) };
         buf.sort_unstable();
 
-        // merge-sort buf into counts.
-        std::mem::swap(&mut counts_cache, &mut counts);
-        counts.clear();
-        let mut bi = 0;
-        let mut ci = 0;
         let mut num_large = 0;
-        let mut top = 0;
-        while num_large < s && (bi < buf.len() || ci < counts_cache.len()) {
-            if bi < buf.len() && (ci >= counts_cache.len() || buf[bi] < counts_cache[ci].0) {
-                // new element from buf
-                let hash = buf[bi];
-                let mut count = 1u32;
-                bi += 1;
-                while bi < buf.len() && buf[bi] == hash {
-                    count += 1;
-                    bi += 1;
-                }
-                counts.push((hash, count));
-            } else if ci < counts_cache.len() && (bi >= buf.len() || counts_cache[ci].0 < buf[bi]) {
-                counts.push(counts_cache[ci]);
-                ci += 1;
-            } else {
-                // equal
-                let hash = buf[bi];
-                let mut count = counts_cache[ci].1;
-                bi += 1;
-                ci += 1;
-                while bi < buf.len() && buf[bi] == hash {
-                    count += 1;
-                    bi += 1;
-                }
-                counts.push((hash, count));
-            }
-            if counts.last().unwrap().1 >= cnt as u32 {
-                top = counts.last().unwrap().0;
+        let mut top = initial_bound;
+        for hash in &*buf {
+            let count = counts.entry(*hash).or_insert(0);
+            *count += 1;
+            if *count >= cnt as u32 {
                 num_large += 1;
+                if num_large == s {
+                    top = *hash;
+                    break;
+                }
             }
         }
-        if num_large < s {
-            top = initial_bound;
-        }
-        counts_cache.clear();
+
+        // counts_cache.clear();
         buf.clear();
 
         // for &hash in &*buf {
