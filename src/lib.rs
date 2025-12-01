@@ -184,7 +184,6 @@ impl Sketch {
                 s: sketch.bottom.len(),
                 b: 0,
                 seed: 0,
-                duplicate: sketch.duplicate,
                 count: sketch.count,
                 coverage: 1,
                 filter_empty: false,
@@ -197,7 +196,6 @@ impl Sketch {
                 s: sketch.buckets.len(),
                 b: sketch.b,
                 seed: 0,
-                duplicate: sketch.duplicate,
                 count: sketch.count,
                 coverage: 1,
                 filter_empty: false,
@@ -267,7 +265,6 @@ pub struct BottomSketch {
     pub rc: bool,
     pub k: usize,
     pub seed: u32,
-    pub duplicate: bool,
     pub count: usize,
     pub bottom: Vec<u32>,
 }
@@ -309,7 +306,6 @@ pub struct BucketSketch {
     pub k: usize,
     pub b: usize,
     pub seed: u32,
-    pub duplicate: bool,
     pub count: usize,
     pub buckets: BitSketch,
     /// Bit-vector indicating empty buckets, so the similarity score can be adjusted accordingly.
@@ -413,11 +409,8 @@ pub struct SketchParams {
     #[arg(long, default_value_t = 0)]
     pub seed: u32,
 
-    /// Sketch only duplicate (non-unique) kmers.
-    #[arg(long)]
-    pub duplicate: bool,
     /// Sketch only kmers with at least this count.
-    #[arg(long)]
+    #[arg(long, default_value_t = 0)]
     pub count: usize,
     /// When sketching read sets of coverage >1, set this for a better initial estimate for the threshold on kmer hashes.
     #[arg(short, long, default_value_t = 1)]
@@ -479,7 +472,6 @@ impl SketchParams {
             s: 32768,
             b: 1,
             seed: 0,
-            duplicate: false,
             count: 0,
             coverage: 1,
             filter_empty: true,
@@ -497,7 +489,6 @@ impl SketchParams {
             s: 8192,
             b: 8,
             seed: 0,
-            duplicate: false,
             count: 0,
             coverage: 1,
             filter_empty: false,
@@ -546,10 +537,6 @@ impl Sketcher {
 
             self.collect_up_to_bound(seqs, bound, &mut out, usize::MAX, |_| unreachable!());
 
-            if self.params.duplicate {
-                panic!("Bottom-sketching only duplicate kmers is not implemented yet.");
-            }
-
             if bound == u32::MAX || out.len() >= self.params.s {
                 out.sort_unstable();
                 let old_len = out.len();
@@ -576,7 +563,6 @@ impl Sketcher {
                         rc: self.params.rc,
                         k: self.params.k,
                         seed: self.params.seed,
-                        duplicate: self.params.duplicate,
                         count: self.params.count,
                         bottom: out,
                     };
@@ -599,10 +585,6 @@ impl Sketcher {
         // Iterate all kmers and compute 32bit nthashes.
         let n = self.num_kmers(seqs);
         let mut out = vec![];
-
-        if self.params.duplicate {
-            panic!("Bottom-sketching only duplicate kmers is not implemented yet.");
-        }
 
         self.collect_up_to_bound(seqs, u32::MAX, &mut out, 2 * self.params.s, |out| {
             // TODO: Can this be made more efficient?
@@ -637,7 +619,6 @@ impl Sketcher {
             rc: self.params.rc,
             k: self.params.k,
             seed: self.params.seed,
-            duplicate: self.params.duplicate,
             count: self.params.count,
             bottom: out,
         };
@@ -656,7 +637,6 @@ impl Sketcher {
             rc: self.params.rc,
             k: self.params.k,
             seed: self.params.seed,
-            duplicate: self.params.duplicate,
             count: self.params.count,
             bottom: out,
         };
@@ -780,12 +760,12 @@ impl Sketcher {
 
                         // Reduce buckets mod m.
                         buckets.iter_mut().for_each(|x| *x =  m.fastdiv(*x) as u32);
+                        log::debug!("Average sketch value: {}", buckets.iter().sum::<u32>() as f32 / self.params.s as f32);
                         return BucketSketch {
                             rc: self.params.rc,
                             k: self.params.k,
                             b: self.params.b,
                             seed: self.params.seed,
-                            duplicate: self.params.duplicate,
                             count: self.params.count,
                             empty,
                             buckets: BitSketch::new(
@@ -1159,7 +1139,6 @@ mod test {
                     s,
                     b,
                     seed: 0,
-                    duplicate: false,
                     count: 0,
                     coverage: 1,
                     filter_empty: false,
@@ -1179,7 +1158,6 @@ mod test {
                     s,
                     b,
                     seed: 0,
-                    duplicate: false,
                     count: 0,
                     coverage: 1,
                     filter_empty: false,
@@ -1208,7 +1186,6 @@ mod test {
                             s,
                             b,
                             seed: 0,
-                            duplicate: false,
                             count: 0,
                             coverage: 1,
                             filter_empty: false,
@@ -1249,7 +1226,6 @@ mod test {
                 s,
                 b,
                 seed: 0,
-                duplicate: false,
                 count: 0,
                 coverage: 1,
                 filter_empty,
@@ -1282,7 +1258,6 @@ mod test {
                         s,
                         b,
                         seed: 0,
-                        duplicate: false,
                         count: 0,
                         coverage: 1,
                         filter_empty,
