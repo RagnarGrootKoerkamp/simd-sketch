@@ -137,7 +137,7 @@
 mod intrinsics;
 
 use std::{
-    collections::{hash_set::Entry, BTreeMap, BinaryHeap, HashMap, HashSet},
+    collections::{hash_map::Entry, HashMap},
     sync::atomic::{AtomicU64, Ordering::Relaxed},
 };
 
@@ -976,10 +976,10 @@ fn new_collect(
     let batch_size = s;
 
     // 2. HashMap with counts.
-    // let mut counts = HashMap::<u32, usize>::new();
+    let mut counts = HashMap::<u32, usize>::new();
     // let mut counts = Vec::<(u32, u32)>::new();
     // let mut counts_cache = vec![];
-    let mut counts = BTreeMap::<u32, u32>::new();
+    // let mut counts = BTreeMap::<u32, u32>::new();
 
     // 3. Priority queue with smallest s elements with sufficient count.
     // Largest at the top, so they can be removed easily.
@@ -996,7 +996,7 @@ fn new_collect(
         for hash in &*buf {
             let count = counts.entry(*hash).or_insert(0);
             *count += 1;
-            if *count >= cnt as u32 {
+            if *count >= cnt {
                 num_large += 1;
                 if num_large == s {
                     top = *hash;
@@ -1065,7 +1065,7 @@ fn new_collect(
     // pq.into_vec()
     counts
         .iter()
-        .filter(|&(_hash, count)| *count >= cnt as u32)
+        .filter(|&(_hash, count)| *count >= cnt)
         .map(|(hash, _count)| *hash)
         .collect()
 }
