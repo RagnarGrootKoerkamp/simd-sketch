@@ -142,7 +142,7 @@ use std::{
 };
 
 use itertools::Itertools;
-use log::{debug, info};
+use log::debug;
 use packed_seq::{u32x8, ChunkIt, PackedNSeq, PaddedIt, Seq};
 use seq_hash::KmerHasher;
 
@@ -1002,7 +1002,7 @@ fn new_collect(
         let now = std::time::Instant::now();
         let duration = now.duration_since(start);
         start = now;
-        info!(
+        log::trace!(
             "Batch of size {write_idx:>10} after {i:>10} kmers. Top: {top:>10} = {:5.1}% counts size {:>9} took {duration:?}",
             top as f32 / u32::MAX as f32 * 100.0,
             counts.len()

@@ -233,9 +233,15 @@ fn main() {
     let num_read = num_read.into_inner();
     let num_sketched = num_sketched.into_inner();
     let num_written = num_written.into_inner();
-    info!("Read {num_read} sketches from disk.");
-    info!("Newly sketched {num_sketched} files.");
-    info!("Wrote {num_written} sketches to disk.");
+    if num_read > 0 {
+        info!("Read {num_read} sketches from disk.");
+    }
+    if num_sketched > 0 {
+        info!("Newly sketched {num_sketched} files.");
+    }
+    if num_written > 0 {
+        info!("Wrote {num_written} sketches to disk.");
+    }
 
     if matches!(args.command, Command::Sketch { .. }) {
         // If we are sketching, we are done.
