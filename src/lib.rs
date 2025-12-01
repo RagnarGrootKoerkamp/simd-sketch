@@ -392,8 +392,8 @@ pub struct SketchParams {
         long="fwd",
         num_args(0),
         action = clap::builder::ArgAction::Set,
-        default_value = "false",
-        default_missing_value = "true",
+        default_value_t = true,
+        default_missing_value = "false",
     )]
     pub rc: bool,
     /// k-mer size.
