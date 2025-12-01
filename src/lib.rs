@@ -1058,6 +1058,7 @@ impl Sketchable for &[u8] {
     fn len(&self) -> usize {
         Seq::len(self)
     }
+    #[inline(always)]
     fn hash_kmers<H: KmerHasher>(self, hasher: &H) -> PaddedIt<impl ChunkIt<u32x8>> {
         hasher.hash_kmers_simd(self, 1)
     }
@@ -1066,6 +1067,7 @@ impl Sketchable for packed_seq::AsciiSeq<'_> {
     fn len(&self) -> usize {
         Seq::len(self)
     }
+    #[inline(always)]
     fn hash_kmers<H: KmerHasher>(self, hasher: &H) -> PaddedIt<impl ChunkIt<u32x8>> {
         hasher.hash_kmers_simd(self, 1)
     }
@@ -1074,6 +1076,7 @@ impl Sketchable for packed_seq::PackedSeq<'_> {
     fn len(&self) -> usize {
         Seq::len(self)
     }
+    #[inline(always)]
     fn hash_kmers<H: KmerHasher>(self, hasher: &H) -> PaddedIt<impl ChunkIt<u32x8>> {
         hasher.hash_kmers_simd(self, 1)
     }
@@ -1082,6 +1085,7 @@ impl<'s> Sketchable for PackedNSeq<'s> {
     fn len(&self) -> usize {
         Seq::len(&self.seq)
     }
+    #[inline(always)]
     fn hash_kmers<'h, H: KmerHasher>(
         self,
         hasher: &'h H,
