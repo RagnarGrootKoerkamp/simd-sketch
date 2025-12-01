@@ -698,22 +698,22 @@ impl Sketcher {
                 if bound == u32::MAX || out.len() >= self.params.s {
                     let m = FM32::new(self.params.s as u32);
 
-                    let mut seen = HashSet::with_capacity(4 * self.params.s);
+                    let mut seen = HashMap::with_capacity(4 * self.params.s);
 
-                    let mut counts = vec![0u16; self.params.s];
-                    if !self.params.duplicate {
+                    // let mut counts = vec![0u16; self.params.s];
+                    if self.params.count <= 1 {
                         for &hash in &*out {
                             let bucket = m.fastmod(hash);
                             debug_assert!(bucket < buckets.len());
                             let min = unsafe { buckets.get_unchecked_mut(bucket) };
                             if hash < *min {
                                 *min = hash;
-                                unsafe { *counts.get_unchecked_mut(bucket) = 1 };
+                                // unsafe { *counts.get_unchecked_mut(bucket) = 1 };
                             }
-                            else if hash == *min {
-                                unsafe { *counts.get_unchecked_mut(bucket) += 1 };
-                            }
-                            // *min = (*min).min(hash);
+                            // else if hash == *min {
+                            //     unsafe { *counts.get_unchecked_mut(bucket) += 1 };
+                            // }
+                            *min = (*min).min(hash);
                         }
                     } else {
                         for &hash in &*out {
@@ -725,18 +725,23 @@ impl Sketcher {
                                 continue;
                             }
                             if hash == *min {
-                                unsafe { *counts.get_unchecked_mut(bucket) += 1 };
+                                // unsafe { *counts.get_unchecked_mut(bucket) += 1 };
                                 continue;
                             }
 
                             match seen.entry(hash) {
                                 Entry::Vacant(e) => {
-                                    e.insert();
+                                    e.insert(1);
                                 }
-                                Entry::Occupied(e) => {
-                                    e.remove();
-                                    *min = hash;
-                                    unsafe { *counts.get_unchecked_mut(bucket) = 2};
+                                Entry::Occupied(mut e) => {
+                                    let cnt = e.get_mut();
+                                    *cnt += 1;
+                                    if *cnt == self.params.count {
+                                        e.remove();
+                                        *min = hash;
+                                        // eprintln!("Min for bucket {bucket} is {hash}");
+                                    }
+                                    // unsafe { *counts.get_unchecked_mut(bucket) = 2};
                                 }
                             }
                         }
@@ -769,7 +774,7 @@ impl Sketcher {
                             vec![]
                         };
 
-                        self.stats(n, buckets, counts);
+                        // self.stats(n, buckets, counts);
 
 
 
