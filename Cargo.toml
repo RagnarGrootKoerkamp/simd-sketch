@@ -44,7 +44,8 @@ indicatif = { version = "0.18.0", features = ["rayon"] }
 bincode = "2.0.1"
 
 packed-seq = "4.2.0"
-seq-hash = "0.1.1"
+# seq-hash = "0.1.1"
+seq-hash.path = "../seq-hash"
 
 [features]
 compression = ["needletail/compression"]

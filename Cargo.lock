@@ -661,8 +661,6 @@ dependencies = [
 [[package]]
 name = "seq-hash"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "223c0987220362a4373b52ab3ffb9bbc7e3e6bcabf9460804e4cc443ff727976"
 dependencies = [
  "packed-seq",
  "wide",
