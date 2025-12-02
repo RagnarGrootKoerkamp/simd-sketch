@@ -16,7 +16,7 @@ panic = "abort"
 debug = true
 incremental = true
 # slow!
-# lto = true
+lto = true
 # codegen-units = 1
 
 [profile.dev]
