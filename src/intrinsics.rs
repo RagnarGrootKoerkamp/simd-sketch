@@ -21,6 +21,9 @@ pub unsafe fn append_from_mask<T>(vals: S, mask: S, v: &mut [T], write_idx: &mut
 #[inline(always)]
 #[cfg(target_feature = "avx2")]
 pub unsafe fn append_from_mask<T>(vals: S, mask: S, v: &mut [T], write_idx: &mut usize) {
+    if mask == S::ZERO {
+        return;
+    }
     unsafe {
         use core::arch::x86_64::*;
 
