@@ -667,8 +667,9 @@ impl Sketcher {
                 let bound = (target as u128 * factor as u128 / 10 as u128).min(u32::MAX as u128) as u32;
 
                 debug!(
-                    "n {n:>10} s {} target {target:>10} factor {factor:>3} bound {bound:>10} ({:>6.3}%)",
+                    "n {n:>10} s {} cnt {} target {target:>10} factor {factor:>3} bound {bound:>10} ({:>6.3}% * u32::MAX)",
                     self.params.s,
+                    self.params.count,
                     bound as f32 / u32::MAX as f32 * 100.0,
                 );
 
@@ -883,7 +884,7 @@ impl Sketcher {
             }
         }
         debug!(
-            "Collect up to {bound:>10}: {:>9} ({:>6.3}%)",
+            "Collect up to {bound:>10}: {:>9} ({:>6.3}% of all kmers)",
             out.len(),
             out.len() as f32 / self.num_kmers(seqs) as f32 * 100.0
         );
