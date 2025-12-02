@@ -45,7 +45,7 @@ bincode = "2.0.1"
 
 packed-seq = "4.2.0"
 # seq-hash = "0.1.1"
-seq-hash.path = "../seq-hash"
+seq-hash.git = "https://github.com/rust-seq/seq-hash"
 
 [features]
 compression = ["needletail/compression"]

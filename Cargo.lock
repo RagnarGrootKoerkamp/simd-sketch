@@ -661,6 +661,7 @@ dependencies = [
 [[package]]
 name = "seq-hash"
 version = "0.1.1"
+source = "git+https://github.com/rust-seq/seq-hash#1b5175253b2925abe71d5f1d638e894f0741d7cf"
 dependencies = [
  "packed-seq",
  "wide",
