@@ -536,7 +536,7 @@ impl Sketcher {
             let factor = self.factor.load(Relaxed);
             let bound = (target as u128 * factor as u128 / 10 as u128).min(u32::MAX as u128) as u32;
 
-            self.collect_up_to_bound(seqs, bound, &mut out, usize::MAX, |_| unreachable!());
+            self.collect_up_to_bound(seqs, bound, &mut out, usize::MAX, |_| 0);
 
             if bound == u32::MAX || out.len() >= self.params.s {
                 out.sort_unstable();
@@ -674,7 +674,7 @@ impl Sketcher {
                     bound as f32 / u32::MAX as f32 * 100.0,
                 );
 
-                self.collect_up_to_bound(seqs, bound, out, usize::MAX, |_| unreachable!());
+                self.collect_up_to_bound(seqs, bound, out, usize::MAX, |_| 0);
 
                 let mut num_empty = 0;
                 if bound == u32::MAX || out.len() >= self.params.s {
@@ -932,6 +932,7 @@ fn collect_impl(
     });
 
     unsafe { out.set_len(write_idx) };
+    // Final call to callback to process the last batch of values.
     callback(out);
 }
 
