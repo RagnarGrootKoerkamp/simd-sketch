@@ -312,5 +312,10 @@ fn collect_paths(paths: &Vec<PathBuf>) -> Vec<PathBuf> {
         }
     }
     res.sort();
+
+    let extensions = [
+        "fa", "fasta", "fq", "fastq", "gz", "fasta.gz", "fq.gz", "fastq.gz",
+    ];
+    res.retain(|p| extensions.iter().any(|e| p.extension().unwrap() == *e));
     res
 }
