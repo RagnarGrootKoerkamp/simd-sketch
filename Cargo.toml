@@ -43,10 +43,13 @@ env_logger = { version = "0.11.8", default-features = false }
 indicatif = { version = "0.18.0", features = ["rayon"] }
 bincode = "2.0.1"
 
-packed-seq = "4.2.0"
+packed-seq = "4.3.0"
 # seq-hash = "0.1.1"
 seq-hash.git = "https://github.com/rust-seq/seq-hash"
 mem_dbg = "0.3.2"
+
+[patch.crates-io]
+packed-seq.git = "https://github.com/rust-seq/packed-seq"
 
 [features]
 compression = ["needletail/compression"]

@@ -134,6 +134,7 @@
 //! Comparing two sketches takes 1.6us.
 //! This starts to be the dominant factor when the number of input sequences is more than 5000.
 
+pub mod classify;
 mod intrinsics;
 
 use std::{
@@ -921,7 +922,7 @@ fn collect_impl(
         unsafe { intrinsics::append_from_mask(hashes, mask & in_bounds, out, &mut write_idx) };
         idx += u32x8::ONE;
         if write_idx >= batch_size as usize {
-            debug!("CALLBACK in iteration {it} old bound {bound}");
+            log::trace!("CALLBACK in iteration {it} old bound {bound}");
             unsafe { out.set_len(write_idx) };
             *bound = callback(out);
             simd_bound = u32x8::splat(*bound);
@@ -931,6 +932,7 @@ fn collect_impl(
     });
 
     unsafe { out.set_len(write_idx) };
+    callback(out);
 }
 
 /// Collect the `s` smallest values that occur at least `cnt` times.

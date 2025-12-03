@@ -61,6 +61,22 @@ enum Command {
         #[arg(long, short = 'j')]
         threads: Option<usize>,
     },
+    /// Takes paths to fasta files, and writes .ssketch files.
+    Classify {
+        // Sketch args
+        #[command(flatten)]
+        params: SketchParams,
+        /// Paths to directory of (gzipped) fasta files.
+        #[arg(long)]
+        targets: Vec<PathBuf>,
+        #[arg(long, short = 'j')]
+        threads: Option<usize>,
+        #[arg(long)]
+        no_save: bool,
+
+        /// Path to .fastq.gz metagenomic sample
+        reads: PathBuf,
+    },
 }
 
 const BINCODE_CONFIG: bincode::config::Configuration<
@@ -87,7 +103,8 @@ fn main() {
     // Initialize thread pool.
     let (Command::Sketch { threads, .. }
     | Command::Dist { threads, .. }
-    | Command::Triangle { threads, .. }) = &args.command;
+    | Command::Triangle { threads, .. }
+    | Command::Classify { threads, .. }) = &args.command;
     if let Some(threads) = threads {
         rayon::ThreadPoolBuilder::new()
             .num_threads(*threads)
@@ -105,10 +122,14 @@ fn main() {
         Command::Sketch { params, paths, .. } | Command::Triangle { params, paths, .. } => {
             (params, collect_paths(&paths))
         }
+        Command::Classify {
+            params, targets, ..
+        } => (params, collect_paths(&targets)),
     };
 
     let save_sketches = match &args.command {
         Command::Sketch { no_save, .. } => !no_save,
+        Command::Classify { no_save, .. } => !no_save,
         Command::Dist { .. } => false,
         Command::Triangle { save_sketches, .. } => *save_sketches,
     };
@@ -247,6 +268,10 @@ fn main() {
         // If we are sketching, we are done.
         return;
     }
+    if let Command::Classify { reads, .. } = &args.command {
+        simd_sketch::classify::classify(&sketches, reads);
+        return;
+    }
 
     let num_pairs = q * (q - 1) / 2;
     let mut pairs = Vec::with_capacity(num_pairs);
@@ -273,6 +298,9 @@ fn main() {
 
     match &args.command {
         Command::Sketch { .. } => {
+            unreachable!();
+        }
+        Command::Classify { .. } => {
             unreachable!();
         }
         Command::Dist { .. } => {
