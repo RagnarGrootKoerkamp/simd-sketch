@@ -150,7 +150,7 @@ use seq_hash::KmerHasher;
 type FwdNtHasher = seq_hash::NtHasher<false, 1>;
 type RcNtHasher = seq_hash::NtHasher<true, 1>;
 
-#[derive(bincode::Encode, bincode::Decode, Debug)]
+#[derive(bincode::Encode, bincode::Decode, Debug, mem_dbg::MemSize)]
 pub enum Sketch {
     BottomSketch(BottomSketch),
     BucketSketch(BucketSketch),
@@ -221,7 +221,7 @@ impl Sketch {
 }
 
 /// Store only the bottom b bits of each input value.
-#[derive(bincode::Encode, bincode::Decode, Debug)]
+#[derive(bincode::Encode, bincode::Decode, Debug, mem_dbg::MemSize)]
 pub enum BitSketch {
     B32(Vec<u32>),
     B16(Vec<u16>),
@@ -260,7 +260,7 @@ impl BitSketch {
 }
 
 /// A sketch containing the `s` smallest k-mer hashes.
-#[derive(bincode::Encode, bincode::Decode, Debug)]
+#[derive(bincode::Encode, bincode::Decode, Debug, mem_dbg::MemSize)]
 pub struct BottomSketch {
     pub rc: bool,
     pub k: usize,
@@ -300,7 +300,7 @@ impl BottomSketch {
 }
 
 /// A sketch containing the smallest k-mer hash for each remainder mod `s`.
-#[derive(bincode::Encode, bincode::Decode, Debug)]
+#[derive(bincode::Encode, bincode::Decode, Debug, mem_dbg::MemSize)]
 pub struct BucketSketch {
     pub rc: bool,
     pub k: usize,
