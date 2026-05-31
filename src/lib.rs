@@ -1,4 +1,3 @@
-#![feature(hash_set_entry, array_windows)]
 //! # SimdSketch
 //!
 //! This library provides two types of sequence sketches:
