@@ -40,7 +40,6 @@ fn main() {
         count: args.params.count,
         coverage,
         filter_empty: true,
-        filter_out_n: false,
     }
     .build();
 

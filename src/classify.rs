@@ -8,8 +8,7 @@ use packed_seq::PackedNSeqVec;
 use crate::{BitSketch, Sketch};
 
 pub fn classify(sketches: &[Sketch], reads: &Path) {
-    let mut params = sketches[0].to_params();
-    params.filter_out_n = true;
+    let params = sketches[0].to_params();
 
     let size = sketches.mem_size(SizeFlags::default());
     eprintln!("sketches size: {}kB", size / 1024);

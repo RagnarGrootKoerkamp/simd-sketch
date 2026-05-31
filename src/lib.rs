@@ -71,7 +71,6 @@
 //!     s: 8192,    // Sample 8192 hashes
 //!     b: 8,       // Store the bottom 8 bits of each hash.
 //!     filter_empty: true, // Explicitly filter out empty buckets for BucketSketch.
-//!     filter_out_n: false, // Set to true to ignore k-mers with `N` or other non-ACTG bases.
 //! }.build();
 //!
 //! // Generate two random sequences of 2M characters.
@@ -187,7 +186,6 @@ impl Sketch {
                 count: sketch.count,
                 coverage: 1,
                 filter_empty: false,
-                filter_out_n: false, // FIXME
             },
             Sketch::BucketSketch(sketch) => SketchParams {
                 alg: SketchAlg::Bucket,
@@ -199,7 +197,6 @@ impl Sketch {
                 count: sketch.count,
                 coverage: 1,
                 filter_empty: false,
-                filter_out_n: false, // FIXME
             },
         }
     }
@@ -419,9 +416,6 @@ pub struct SketchParams {
     /// For bucket-sketch, store a bitmask of empty buckets, to increase accuracy on small genomes.
     #[arg(skip = true)]
     pub filter_empty: bool,
-
-    #[arg(long)]
-    pub filter_out_n: bool,
 }
 
 /// An object containing the sketch parameters.
@@ -475,7 +469,6 @@ impl SketchParams {
             count: 0,
             coverage: 1,
             filter_empty: true,
-            filter_out_n: false,
         }
     }
 
@@ -492,7 +485,6 @@ impl SketchParams {
             count: 0,
             coverage: 1,
             filter_empty: false,
-            filter_out_n: false,
         }
     }
 }
@@ -1081,6 +1073,7 @@ impl Sketchable for packed_seq::AsciiSeq<'_> {
         hasher.hash_kmers_simd(self, 1)
     }
 }
+/// Iterates over all kmer hashes.
 impl Sketchable for packed_seq::PackedSeq<'_> {
     fn len(&self) -> usize {
         Seq::len(self)
@@ -1090,6 +1083,7 @@ impl Sketchable for packed_seq::PackedSeq<'_> {
         hasher.hash_kmers_simd(self, 1)
     }
 }
+/// Iterates over all 'valid' N-free kmer hashes.
 impl<'s> Sketchable for PackedNSeq<'s> {
     fn len(&self) -> usize {
         Seq::len(&self.seq)
@@ -1155,7 +1149,6 @@ mod test {
                     count: 0,
                     coverage: 1,
                     filter_empty: false,
-                    filter_out_n: true,
                 }
                 .build();
                 let bottom = sketcher.bottom_sketch(&[seq.as_slice()]).bottom;
@@ -1174,7 +1167,6 @@ mod test {
                     count: 0,
                     coverage: 1,
                     filter_empty: false,
-                    filter_out_n: true,
                 }
                 .build();
                 let bottom = sketcher.bottom_sketch(&[seq.as_slice()]).bottom;
@@ -1202,7 +1194,6 @@ mod test {
                             count: 0,
                             coverage: 1,
                             filter_empty: false,
-                            filter_out_n: true,
                         }
                         .build();
                         let bottom = sketcher.bottom_sketch(&[seq.as_slice()]).bottom;
@@ -1242,7 +1233,6 @@ mod test {
                 count: 0,
                 coverage: 1,
                 filter_empty,
-                filter_out_n: false,
             }
             .build();
             let sketch = sketcher.sketch(seq.as_slice());
@@ -1274,7 +1264,6 @@ mod test {
                         count: 0,
                         coverage: 1,
                         filter_empty,
-                        filter_out_n: false,
                     }
                     .build();
                     let s1 = sketcher.sketch(seq1.as_slice());

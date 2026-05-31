@@ -7,9 +7,8 @@ use std::{
 
 use clap::Parser;
 use indicatif::ParallelProgressIterator;
-use itertools::Itertools;
-use log::info;
-use packed_seq::{PackedNSeqVec, PackedSeqVec, SeqVec};
+use log::{debug, info};
+use packed_seq::PackedNSeqVec;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use simd_sketch::SketchParams;
 
@@ -198,24 +197,11 @@ fn main() {
 
 
             let mut sketch;
-            if params.filter_out_n {
-                let seq = PackedNSeqVec::from_fastx(&path);
-                let slices = vec![seq.as_slice()];
-                sketch = sketcher.sketch_seqs(&slices);
-            } else {
-                let mut reader = needletail::parse_fastx_file(&path).unwrap();
-                let mut ranges = vec![];
-                let mut seq = PackedSeqVec::default();
-                let mut size = 0;
-                while let Some(r) = reader.next() {
-                    let range = seq.push_ascii(&r.unwrap().seq());
-                    size += range.len();
-                    ranges.push(range);
-                }
-                total_bytes.fetch_add(size, Relaxed);
-                let slices = ranges.into_iter().map(|r| seq.slice(r)).collect_vec();
-                sketch = sketcher.sketch_seqs(&slices);
-            }
+            debug!("reading..");
+            let seq = PackedNSeqVec::from_fastx(&path);
+            let slices = vec![seq.as_slice()];
+            debug!("reading done");
+            sketch = sketcher.sketch_seqs(&slices);
             num_sketched.fetch_add(1, Relaxed);
 
             if save_sketches {
