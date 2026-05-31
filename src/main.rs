@@ -196,22 +196,14 @@ fn main() {
                 return read_sketch(&ssketch_path);
             }
 
-            let mut reader = needletail::parse_fastx_file(&path).unwrap();
 
             let mut sketch;
             if params.filter_out_n {
-                let mut ranges = vec![];
-                let mut seq = PackedNSeqVec::default();
-                let mut size = 0;
-                while let Some(r) = reader.next() {
-                    let range = seq.push_ascii(&r.unwrap().seq());
-                    size += range.len();
-                    ranges.push(range);
-                }
-                total_bytes.fetch_add(size, Relaxed);
-                let slices = ranges.into_iter().map(|r| seq.slice(r)).collect_vec();
+                let seq = PackedNSeqVec::from_fastx(&path);
+                let slices = vec![seq.as_slice()];
                 sketch = sketcher.sketch_seqs(&slices);
             } else {
+                let mut reader = needletail::parse_fastx_file(&path).unwrap();
                 let mut ranges = vec![];
                 let mut seq = PackedSeqVec::default();
                 let mut size = 0;
