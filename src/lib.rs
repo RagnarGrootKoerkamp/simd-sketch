@@ -777,13 +777,19 @@ impl Sketcher {
                     }
                 }
 
-                let new_factor = factor + factor.div_ceil(4);
+                // Correct for number of empty buckets.
+                // If we currently filled a fraction p,
+                // each remaining bucket is expected to be filled at threshold factor / p.
+                // The last one of them is then filled around factor/p * lg(#empty).
+                let adjusted_factor = factor + factor * num_empty as u64 / (self.params.s - num_empty).max(1) as u64 * (num_empty.ilog2()+1) as u64;
+                // Add another 100% margin
+                let new_factor = adjusted_factor + adjusted_factor;
                 let prev = self.factor.fetch_max(new_factor, Relaxed);
                 debug!(
                     "Found only {:>10} of {:>10} ({:>6.3}%, {num_empty:>5} empty) Increasing factor from {factor} to {new_factor} (was already {prev})",
-                    out.len(),
+                    self.params.s - num_empty,
                     self.params.s,
-                    out.len() as f32 / self.params.s as f32 * 100.,
+                    (self.params.s-num_empty) as f32 / self.params.s as f32 * 100.,
                 );
             }
         })
