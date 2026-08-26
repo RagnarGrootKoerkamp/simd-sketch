@@ -38,3 +38,47 @@ bindashrs s:
 
 
 bindashrs_all: (bindashrs "128") (bindashrs "1024") (bindashrs "8192") (bindashrs "32768")
+
+
+f:= "~/git/eth/data/ERR9281752_*.fastq"
+eval: 
+    cargo build -r
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bucket -s 1000 --coverage 20 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bucket -s 1000 --coverage 30 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bucket -s 1000 --coverage 30 --count 2
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bucket -s 1000 --coverage 30 --count 5
+
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bucket -s 10000 --coverage 20 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bucket -s 10000 --coverage 30 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bucket -s 10000 --coverage 30 --count 2
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bucket -s 10000 --coverage 30 --count 5
+
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bottom3 -s 1000 --coverage 20 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bottom3 -s 1000 --coverage 30 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bottom3 -s 1000 --coverage 30 --count 2
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bottom3 -s 1000 --coverage 30 --count 5
+
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bottom3 -s 10000 --coverage 20 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bottom3 -s 10000 --coverage 30 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bottom3 -s 10000 --coverage 30 --count 2
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}} --alg bottom3 -s 10000 --coverage 30 --count 5
+
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bucket -s 1000 --coverage 20 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bucket -s 1000 --coverage 30 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bucket -s 1000 --coverage 30 --count 2
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bucket -s 1000 --coverage 30 --count 5
+
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bucket -s 10000 --coverage 20 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bucket -s 10000 --coverage 30 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bucket -s 10000 --coverage 30 --count 2
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bucket -s 10000 --coverage 30 --count 5
+
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bottom3 -s 1000 --coverage 20 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bottom3 -s 1000 --coverage 30 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bottom3 -s 1000 --coverage 30 --count 2
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bottom3 -s 1000 --coverage 30 --count 5
+
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bottom3 -s 10000 --coverage 20 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bottom3 -s 10000 --coverage 30 --count 1
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bottom3 -s 10000 --coverage 30 --count 2
+    ./target/release/simd-sketch sketch --no-save -j1 {{f}}.gz --alg bottom3 -s 10000 --coverage 30 --count 5
